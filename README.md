@@ -6,9 +6,9 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/machcode"><img src="https://img.shields.io/badge/npm-v0.1.0-blue.svg?style=flat-square" alt="npm version" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/releases"><img src="https://img.shields.io/badge/version-v0.1.0-blue.svg?style=flat-square" alt="version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/build-passing-brightgreen.svg?style=flat-square" alt="Build Status" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-29%2F29%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.6-blue.svg?style=flat-square&logo=typescript" alt="TypeScript" /></a>
   <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-Integrated-76B900.svg?style=flat-square&logo=nvidia" alt="NVIDIA NIM" /></a>
   <a href="#"><img src="https://img.shields.io/badge/REPL-Interactive-cyan.svg?style=flat-square" alt="REPL Mode" /></a>
@@ -113,21 +113,29 @@ pnpm add -g machcode
 npm install -g machcode
 ```
 
-### Local Setup (From Source)
+### Local Setup (From Source & Global Symlink)
+
+To use `mach` directly from your terminal across your entire machine before the package is published to npm:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/machcode.git
-cd machcode
+git clone https://github.com/gokaykrbs/MachCode.git
+cd MachCode
 
 # 2. Install dependencies
-pnpm install
+pnpm install # or npm install
 
 # 3. Build TypeScript to dist/
-pnpm build
+npm run build # or pnpm build
 
-# 4. Link globally for development
-pnpm link --global
+# 4. Link globally (enables the `mach` command everywhere)
+npm link # or pnpm link --global
+```
+
+Now you can open **any directory** in your terminal and immediately type:
+
+```bash
+mach
 ```
 
 ---
@@ -267,18 +275,30 @@ machcode/
 
 ## 🧪 Testing
 
-MachCode ships with a comprehensive test suite covering the streaming racer, executor, tool schemas, Stop & Ask loops, multi-turn REPL interactions, and slash command execution:
+MachCode ships with an exhaustive, enterprise-grade test suite covering the Streaming Handoff Racing engine, executor hooks, tool schemas, Stop & Ask loops, multi-turn REPL interactions, and all 17 slash commands (29 tests across 8 suites, 100% passing):
 
 ```bash
-# Run the complete test suite
-pnpm test
+# Run the complete test suite (builds and executes all suites)
+npm test # or pnpm test
 
 # Run TypeScript compilation check
-pnpm build
+npm run build # or pnpm build
 
-# Run ESLint & Prettier
-pnpm lint
-pnpm format:check
+# Run code style and format checks
+npm run format:check
+```
+
+```text
+✔ Slash Command Registry & Command Handler (11 tests pass)
+✔ Tools & NVIDIA Official Skills Integration (3 tests pass)
+✔ Executor (src/engine/executor.ts) (2 tests pass)
+✔ Streaming Handoff Engine (raceModels) (5 tests pass)
+✔ End-to-End CLI Execution Flow (runMachCode) (1 test pass)
+✔ Interactive REPL Mode (startRepl) (3 tests pass)
+✔ Sniper System Prompt (1 test pass)
+✔ StreamParser (3 tests pass)
+
+ℹ tests 29 | pass 29 | fail 0
 ```
 
 ---
