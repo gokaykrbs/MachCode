@@ -11,9 +11,13 @@ export const helpCommand: SlashCommand = {
   usage: '/help',
   aliases: ['h', 'commands'],
   execute: async (_args: string, context: CommandContext) => {
-    console.log(chalk.cyan.bold('\n══════════════════════════════════════════════════════════════════'));
+    console.log(
+      chalk.cyan.bold('\n══════════════════════════════════════════════════════════════════'),
+    );
     console.log(chalk.cyan.bold('                MACHCODE SLASH COMMAND SYSTEM'));
-    console.log(chalk.cyan.bold('══════════════════════════════════════════════════════════════════\n'));
+    console.log(
+      chalk.cyan.bold('══════════════════════════════════════════════════════════════════\n'),
+    );
 
     // We can import or access all commands dynamically
     const { allCommands } = await import('./index.js');
@@ -34,7 +38,10 @@ export const helpCommand: SlashCommand = {
       for (const c of cmds) {
         const cmdName = chalk.green.bold(`/${c.name}`.padEnd(16));
         const usage = c.usage ? chalk.dim(`[${c.usage}]`.padEnd(22)) : ''.padEnd(22);
-        const aliases = c.aliases && c.aliases.length > 0 ? chalk.gray(` (aliases: ${c.aliases.map(a => `/${a}`).join(', ')})`) : '';
+        const aliases =
+          c.aliases && c.aliases.length > 0
+            ? chalk.gray(` (aliases: ${c.aliases.map((a) => `/${a}`).join(', ')})`)
+            : '';
         console.log(`  ${cmdName} ${usage} ${chalk.white(c.description)}${aliases}`);
       }
       console.log('');
@@ -122,7 +129,9 @@ export const configCommand: SlashCommand = {
     console.log(
       `  API Key:     ${
         existing?.nvidiaApiKey
-          ? chalk.green(`Configured (${existing.nvidiaApiKey.slice(0, 10)}...${existing.nvidiaApiKey.slice(-4)})`)
+          ? chalk.green(
+              `Configured (${existing.nvidiaApiKey.slice(0, 10)}...${existing.nvidiaApiKey.slice(-4)})`,
+            )
           : chalk.red('Missing')
       }\n`,
     );

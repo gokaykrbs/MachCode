@@ -45,7 +45,9 @@ export const addCommand: SlashCommand = {
         );
       } else {
         context.addedContextFiles.add(relPath);
-        console.log(chalk.green(`✔ Added `) + chalk.white.bold(relPath) + chalk.green(` to session context.`));
+        console.log(
+          chalk.green(`✔ Added `) + chalk.white.bold(relPath) + chalk.green(` to session context.`),
+        );
       }
     } catch {
       console.log(chalk.red(`✖ Path not found or inaccessible: ${targetInput}`));
@@ -73,7 +75,10 @@ export const dropCommand: SlashCommand = {
     } else {
       // Check prefix if a folder was specified
       for (const file of Array.from(context.addedContextFiles)) {
-        if (file === targetInput || file.startsWith(targetInput.endsWith('/') ? targetInput : `${targetInput}/`)) {
+        if (
+          file === targetInput ||
+          file.startsWith(targetInput.endsWith('/') ? targetInput : `${targetInput}/`)
+        ) {
           context.addedContextFiles.delete(file);
           removed = true;
         }
@@ -81,7 +86,11 @@ export const dropCommand: SlashCommand = {
     }
 
     if (removed) {
-      console.log(chalk.green(`✔ Removed `) + chalk.white.bold(targetInput) + chalk.green(` from session context.`));
+      console.log(
+        chalk.green(`✔ Removed `) +
+          chalk.white.bold(targetInput) +
+          chalk.green(` from session context.`),
+      );
     } else {
       console.log(chalk.yellow(`ℹ Path "${targetInput}" was not in the active session context.`));
     }
@@ -100,7 +109,11 @@ export const resetCommand: SlashCommand = {
     context.tokenStats.estimatedPromptTokens = 0;
     context.tokenStats.estimatedCompletionTokens = 0;
     context.tokenStats.totalTurns = 0;
-    console.log(chalk.green.bold('✔ Session history, active context files, and token usage counters have been reset.'));
+    console.log(
+      chalk.green.bold(
+        '✔ Session history, active context files, and token usage counters have been reset.',
+      ),
+    );
   },
 };
 
@@ -133,7 +146,9 @@ export const contextCommand: SlashCommand = {
     }
 
     if (context.fileSnapshots.length > 0) {
-      console.log(`\n${chalk.cyan.bold('Undoable AI File Modifications:')} ${context.fileSnapshots.length} snapshot(s)`);
+      console.log(
+        `\n${chalk.cyan.bold('Undoable AI File Modifications:')} ${context.fileSnapshots.length} snapshot(s)`,
+      );
     }
     console.log('');
   },

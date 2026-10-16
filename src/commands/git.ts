@@ -33,7 +33,9 @@ export const undoCommand: SlashCommand = {
       if (lastSnapshot.previousContent === '__FILE_DID_NOT_EXIST__') {
         // File was newly created by the AI; remove it to undo
         await fs.rm(targetPath, { force: true });
-        console.log(chalk.green(`✔ Undone file creation: removed `) + chalk.white.bold(lastSnapshot.file));
+        console.log(
+          chalk.green(`✔ Undone file creation: removed `) + chalk.white.bold(lastSnapshot.file),
+        );
       } else {
         await fs.mkdir(path.dirname(targetPath), { recursive: true });
         await fs.writeFile(targetPath, lastSnapshot.previousContent, 'utf-8');
@@ -63,7 +65,8 @@ export const diffCommand: SlashCommand = {
       }
 
       const { stdout: diffOut } = await runGit(['diff', 'HEAD'], context.baseDir);
-      const combined = diffOut.trim().length > 0 ? diffOut : (await runGit(['diff'], context.baseDir)).stdout;
+      const combined =
+        diffOut.trim().length > 0 ? diffOut : (await runGit(['diff'], context.baseDir)).stdout;
 
       if (!combined.trim()) {
         console.log(chalk.gray('\nUntracked files present, but no tracked diffs:\n') + statusOut);
@@ -87,7 +90,9 @@ export const diffCommand: SlashCommand = {
       }
       console.log('');
     } catch (err) {
-      console.log(chalk.yellow(`ℹ Git repository not found or git diff unavailable: ${String(err)}`));
+      console.log(
+        chalk.yellow(`ℹ Git repository not found or git diff unavailable: ${String(err)}`),
+      );
     }
   },
 };
@@ -125,9 +130,16 @@ ${diffSummary}`;
       });
 
       let commitMsg = runRes.raceResult.parseResult.visibleOutput.trim();
-      commitMsg = commitMsg.replace(/^```[a-z]*\s*/i, '').replace(/```$/g, '').trim();
-      const firstLine = commitMsg.split('\n')[0].replace(/^["']|["']$/g, '').trim();
-      const finalMsg = firstLine.length > 5 ? firstLine : `chore: update files in ${context.baseDir}`;
+      commitMsg = commitMsg
+        .replace(/^```[a-z]*\s*/i, '')
+        .replace(/```$/g, '')
+        .trim();
+      const firstLine = commitMsg
+        .split('\n')[0]
+        .replace(/^["']|["']$/g, '')
+        .trim();
+      const finalMsg =
+        firstLine.length > 5 ? firstLine : `chore: update files in ${context.baseDir}`;
 
       console.log(chalk.white(`Proposed commit message: `) + chalk.green.bold(`"${finalMsg}"`));
 
@@ -143,8 +155,4 @@ ${diffSummary}`;
   },
 };
 
-export const gitCommands: SlashCommand[] = [
-  undoCommand,
-  diffCommand,
-  commitCommand,
-];
+export const gitCommands: SlashCommand[] = [undoCommand, diffCommand, commitCommand];

@@ -111,7 +111,10 @@ describe('Interactive REPL Mode (startRepl)', () => {
         tmpWorkspace,
       );
 
-      const sentBodies: Array<{ model: string; messages: Array<{ role: string; content: string }> }> = [];
+      const sentBodies: Array<{
+        model: string;
+        messages: Array<{ role: string; content: string }>;
+      }> = [];
 
       const mockFetch: typeof fetch = async (input, init) => {
         const url = String(input);
@@ -226,14 +229,7 @@ describe('Interactive REPL Mode (startRepl)', () => {
       await write_file('test.ts', 'const x = 1;', tmpWorkspace);
 
       let idx = 0;
-      const answers = [
-        '/add test.ts',
-        '/context',
-        '/undo',
-        '/reset',
-        '/help',
-        '/exit',
-      ];
+      const answers = ['/add test.ts', '/context', '/undo', '/reset', '/help', '/exit'];
       const testRl = {
         question: async () => answers[idx++] ?? '/exit',
         close: () => {},

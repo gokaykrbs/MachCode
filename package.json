@@ -11,8 +11,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "dev": "tsx bin/machcode.ts",
-    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "dev": "tsc && node dist/bin/machcode.js",
+    "test": "tsc && node --test --test-concurrency=1 \"dist/**/*.test.js\"",
     "lint": "eslint \"src/**/*.ts\" \"bin/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\" \"bin/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"bin/**/*.ts\"",

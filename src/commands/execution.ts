@@ -105,7 +105,9 @@ export const reviewCommand: SlashCommand = {
       return;
     }
 
-    console.log(chalk.magenta.bold(`\n🔍 Performing Code Review on ${relFile} (${context.heavyModel})...\n`));
+    console.log(
+      chalk.magenta.bold(`\n🔍 Performing Code Review on ${relFile} (${context.heavyModel})...\n`),
+    );
 
     const reviewPrompt = `[CODE REVIEW MODE: Review the following file thoroughly. Evaluate architecture, security vulnerabilities, edge-case bugs, performance bottlenecks, and clarity. Do NOT output code fences to overwrite the file; output a structured markdown review]:
 File: \`${relFile}\`

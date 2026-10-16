@@ -236,4 +236,115 @@ describe('Streaming Handoff Engine (raceModels)', () => {
     assert.equal(result.heavyAborted, false);
     assert.equal(result.parseResult.extractedCode, 'export const instant = 42;');
   });
+
+  it('forwards multi-turn session messages in request payload to both models', async () => {
+    const recordedPayloads: Array<{
+      model: string;
+      messages: Array<{ role: string; content: string }>;
+    }> = [];
+
+    const mockFetch: typeof fetch = async (_input, init) => {
+      const parsedBody = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+        model: string;
+        messages: Array<{ role: string; content: string }>;
+      };
+      recordedPayloads.push(parsedBody);
+
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const sse = `data: ${JSON.stringify({
+            choices: [{ index: 0, delta: { content: '```ts\nconst ok = true;\n```' } }],
+          })}\n\ndata: [DONE]\n\n`;
+          controller.enqueue(encoder.encode(sse));
+          controller.close();
+        },
+      });
+
+      return new Response(stream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    };
+
+    const priorHistory = [
+      { role: 'user' as const, content: 'Previous prompt: create auth.ts' },
+      { role: 'assistant' as const, content: 'export const token = "abc";' },
+    ];
+
+    await raceModels('Now add refresh token function', LIGHT_MODEL, HEAVY_MODEL, {
+      apiKey: 'nvapi-test-key',
+      handoffWindowMs: 50,
+      writeToStdout: false,
+      debugLogPath: null,
+      fetchImpl: mockFetch,
+      messages: priorHistory,
+    });
+
+    assert.ok(recordedPayloads.length >= 1);
+    for (const payload of recordedPayloads) {
+      assert.ok(
+        payload.messages.some(
+          (m) => m.role === 'user' && m.content.includes('Previous prompt: create auth.ts'),
+        ),
+      );
+      assert.ok(
+        payload.messages.some(
+          (m) => m.role === 'assistant' && m.content.includes('export const token = "abc";'),
+        ),
+      );
+      assert.ok(
+        payload.messages.some(
+          (m) => m.role === 'user' && m.content.includes('Now add refresh token function'),
+        ),
+      );
+    }
+  });
+
+  it('gracefully recovers and allows Heavyweight to win if Lightweight encounters an error', async () => {
+    let callCount = 0;
+    const mockFetch: typeof fetch = async (_input, init) => {
+      const parsedBody = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+        model: string;
+      };
+      callCount++;
+
+      if (parsedBody.model === LIGHT_MODEL) {
+        // Return 500 error for light model
+        return new Response('Rate limit exceeded', { status: 500 });
+      }
+
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          setTimeout(() => {
+            const sse = `data: ${JSON.stringify({
+              choices: [
+                { index: 0, delta: { content: '```ts\nexport const heavyRecovery = true;\n```' } },
+              ],
+            })}\n\ndata: [DONE]\n\n`;
+            controller.enqueue(encoder.encode(sse));
+            controller.close();
+          }, 30);
+        },
+      });
+
+      return new Response(stream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    };
+
+    const result = await raceModels('Recover test', LIGHT_MODEL, HEAVY_MODEL, {
+      apiKey: 'nvapi-test-key',
+      handoffWindowMs: 3000,
+      writeToStdout: false,
+      debugLogPath: null,
+      fetchImpl: mockFetch,
+    });
+
+    assert.equal(result.winnerRole, 'heavy');
+    assert.equal(result.winnerModel, HEAVY_MODEL);
+    assert.equal(result.parseResult.extractedCode, 'export const heavyRecovery = true;');
+  });
 });
