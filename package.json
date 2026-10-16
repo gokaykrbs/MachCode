@@ -1,0 +1,48 @@
+{
+  "name": "machcode",
+  "version": "0.1.0",
+  "description": "Zero-hallucination, high-speed AI code editor CLI powered by Streaming Handoff Racing on NVIDIA NIM.",
+  "type": "module",
+  "bin": {
+    "mach": "./dist/bin/machcode.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx bin/machcode.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "lint": "eslint \"src/**/*.ts\" \"bin/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"bin/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"bin/**/*.ts\"",
+    "prepare": "tsc"
+  },
+  "keywords": [
+    "ai",
+    "cli",
+    "code-editor",
+    "nvidia-nim",
+    "llm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "ora": "^8.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.12.0",
+    "@types/node": "^22.7.5",
+    "eslint": "^9.12.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.8.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
