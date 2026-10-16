@@ -19,6 +19,10 @@ export interface ExecutorOptions {
    * Optional custom logger function (useful for capturing terminal output in tests).
    */
   logger?: (message: string) => void;
+  /**
+   * Optional callback invoked immediately before a file is written or overwritten.
+   */
+  onBeforeWrite?: (targetPath: string, baseDir: string) => Promise<void> | void;
 }
 
 export interface ExecutionSummary {
@@ -135,6 +139,9 @@ export async function executeParsedCode(
 
   for (const [targetPath, codeChunks] of fileContentsMap.entries()) {
     const combinedCode = `${codeChunks.join('\n\n').replace(/\r?\n$/, '')}\n`;
+    if (options.onBeforeWrite) {
+      await options.onBeforeWrite(targetPath, baseDir);
+    }
     const writeResult = await write_file(targetPath, combinedCode, baseDir);
     modifiedFiles.push(writeResult);
   }

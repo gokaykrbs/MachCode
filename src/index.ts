@@ -7,6 +7,7 @@ import ora from 'ora';
 import { ensureConfig } from './config/index.js';
 import { executeParsedCode, type ExecutionSummary } from './engine/executor.js';
 import {
+  DEFAULT_HANDOFF_WINDOW_MS,
   DEFAULT_HEAVY_MODEL,
   DEFAULT_LIGHT_MODEL,
   raceModels,
@@ -20,6 +21,17 @@ import {
   type OpenAIToolDefinition,
 } from './tools/index.js';
 import { OFFICIAL_NVIDIA_SKILLS_CATALOG, loadNvidiaSkill } from './tools/nvidiaSkills.js';
+import {
+  createDefaultCommandRegistry,
+  type CommandContext,
+  type FileSnapshot,
+  type TokenStats,
+} from './commands/index.js';
+
+export interface SessionMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 export interface MachCodeRunOptions {
   /**
@@ -46,6 +58,18 @@ export interface MachCodeRunOptions {
    * Optional explicit API key (skips interactive first-run config prompt when provided).
    */
   apiKey?: string;
+  /**
+   * Prior conversation turns for multi-step interactive REPL context retention.
+   */
+  history?: SessionMessage[];
+  /**
+   * Explicitly added context files from `/add <path>`.
+   */
+  addedFiles?: Set<string>;
+  /**
+   * Callback invoked before modifying a file (used for /undo snapshotting).
+   */
+  onBeforeWrite?: (targetPath: string, baseDir: string) => Promise<void> | void;
   /**
    * Optional custom fetch implementation for end-to-end testing.
    */
@@ -161,6 +185,8 @@ export async function gatherWorkspaceContext(
   prompt: string,
   baseDir: string,
   explicitTargetFile?: string,
+  history?: SessionMessage[],
+  addedFiles?: Set<string>,
 ): Promise<{
   contextText: string;
   inferredTargetFile?: string;
@@ -178,6 +204,13 @@ export async function gatherWorkspaceContext(
     matchedFiles.add(explicitTargetFile.split(path.sep).join('/'));
   }
 
+  // Include any files explicitly added via /add <path>
+  if (addedFiles) {
+    for (const addPath of addedFiles) {
+      matchedFiles.add(addPath.split(path.sep).join('/'));
+    }
+  }
+
   for (const relFile of workspaceFiles) {
     const fileLower = relFile.toLowerCase();
     const baseName = path.basename(fileLower, path.extname(fileLower));
@@ -190,8 +223,25 @@ export async function gatherWorkspaceContext(
     }
   }
 
-  const fileContentsSections: string[] = [];
+  // If no target file is directly in the prompt, inspect recent session history
   let inferredTargetFile = explicitTargetFile;
+  if (!inferredTargetFile && history && history.length > 0) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const prevText = history[i].content.toLowerCase();
+      for (const relFile of workspaceFiles) {
+        if (prevText.includes(relFile.toLowerCase())) {
+          inferredTargetFile = relFile;
+          matchedFiles.add(relFile);
+          break;
+        }
+      }
+      if (inferredTargetFile) {
+        break;
+      }
+    }
+  }
+
+  const fileContentsSections: string[] = [];
 
   for (const relFile of Array.from(matchedFiles).slice(0, 5)) {
     try {
@@ -256,6 +306,17 @@ export async function gatherWorkspaceContext(
 
   if (skillSections.length > 0) {
     sections.push(skillSections.join('\n\n'));
+  }
+
+  if (history && history.length > 0) {
+    const recentHistory = history
+      .slice(-4)
+      .map(
+        (m) =>
+          `[${m.role.toUpperCase()}]: ${m.content.length > 300 ? m.content.slice(0, 300) + '...' : m.content}`,
+      )
+      .join('\n');
+    sections.push(`## Recent Session History Context\n${recentHistory}`);
   }
 
   return {
@@ -329,6 +390,8 @@ export async function runMachCode(
       currentPrompt,
       baseDir,
       options.targetFilePath,
+      options.history,
+      options.addedFiles,
     );
     const systemPrompt = buildSniperSystemPrompt(contextText);
 
@@ -349,6 +412,7 @@ export async function runMachCode(
       writeToStdout,
       fetchImpl: options.fetchImpl,
       promptOnQuestion: false,
+      messages: options.history?.map((m) => ({ role: m.role, content: m.content })),
       onFirstToken: (model, role) => {
         if (spinner && spinner.isSpinning) {
           spinner.stop();
@@ -392,6 +456,7 @@ export async function runMachCode(
           targetFilePath: options.targetFilePath ?? inferredTargetFile,
           baseDir,
           logSummary: writeToStdout,
+          onBeforeWrite: options.onBeforeWrite,
         });
         return {
           raceResult,
@@ -417,6 +482,7 @@ export async function runMachCode(
       targetFilePath: fallbackTarget,
       baseDir,
       logSummary: writeToStdout,
+      onBeforeWrite: options.onBeforeWrite,
     });
 
     const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -440,6 +506,232 @@ export async function runMachCode(
   }
 }
 
+export interface ReplOptions extends MachCodeRunOptions {
+  /**
+   * Optional initial instruction to execute upon entering the REPL.
+   */
+  initialPrompt?: string;
+  /**
+   * Optional injected readline interface (useful for automated testing).
+   */
+  rlInterface?: readline.Interface;
+}
+
+/**
+ * Displays the MachCode ASCII branding banner in the terminal.
+ */
+export function printReplBanner(): void {
+  console.log(
+    chalk.cyan.bold('\n⚡ MACHCODE CLI v1.0.0') +
+      chalk.gray(' — Speed-driven autonomous code editor (NVIDIA NIM)\n') +
+      chalk.dim('Type your instruction, or ') +
+      chalk.yellow('/clear') +
+      chalk.dim(' to clear screen, ') +
+      chalk.yellow('/exit') +
+      chalk.dim(' to quit.\n'),
+  );
+}
+
+/**
+ * Starts the continuous interactive REPL loop (Read-Eval-Print Loop).
+ * 1. Initializes configuration and ensures valid NVIDIA_API_KEY (prompting once if missing).
+ * 2. Displays startup banner and prompt: `[machcode✨] > `
+ * 3. Keeps an in-memory session history array for multi-turn context retention.
+ * 4. Routes slash commands starting with `/` dynamically through the CommandRegistry.
+ * 5. Passes non-slash user instructions to the Streaming Handoff Racing Engine.
+ * 6. Records pre-modification file snapshots for `/undo` revert capabilities.
+ * 7. Never exits the process on completion or errors — always presents the prompt again.
+ */
+export async function startRepl(options: ReplOptions = {}): Promise<void> {
+  // Step 1: Ensure NVIDIA_API_KEY configuration
+  if (!options.apiKey) {
+    await ensureConfig();
+  }
+
+  // Display startup banner
+  if (options.writeToStdout ?? true) {
+    printReplBanner();
+  }
+
+  // Session state tracking
+  const sessionHistory: SessionMessage[] = [...(options.history ?? [])];
+  const addedContextFiles = new Set<string>();
+  const fileSnapshots: FileSnapshot[] = [];
+  const tokenStats: TokenStats = {
+    estimatedPromptTokens: 0,
+    estimatedCompletionTokens: 0,
+    totalTurns: 0,
+  };
+
+  const commandRegistry = createDefaultCommandRegistry();
+
+  const rl =
+    options.rlInterface ??
+    readline.createInterface({
+      input,
+      output,
+    });
+
+  const baseDir = options.baseDir ?? process.cwd();
+  const lightModel = options.lightModel ?? DEFAULT_LIGHT_MODEL;
+  const heavyModel = options.heavyModel ?? DEFAULT_HEAVY_MODEL;
+  const handoffWindowMs = options.handoffWindowMs ?? DEFAULT_HANDOFF_WINDOW_MS;
+
+  // Instruction executor with automatic pre-write file snapshotting & token estimation
+  const executeInstruction = async (
+    prompt: string,
+    runOpts?: MachCodeRunOptions,
+  ): Promise<MachCodeRunResult> => {
+    const mergedOptions: MachCodeRunOptions = {
+      ...options,
+      ...runOpts,
+      baseDir,
+      lightModel: runOpts?.lightModel ?? lightModel,
+      heavyModel: runOpts?.heavyModel ?? heavyModel,
+      handoffWindowMs: runOpts?.handoffWindowMs ?? handoffWindowMs,
+      history: sessionHistory,
+      addedFiles: addedContextFiles,
+      onBeforeWrite: async (targetPath: string, workspaceDir: string) => {
+        try {
+          const existing = await read_file(targetPath, workspaceDir);
+          fileSnapshots.push({
+            file: targetPath,
+            previousContent: existing,
+            timestamp: Date.now(),
+          });
+        } catch {
+          fileSnapshots.push({
+            file: targetPath,
+            previousContent: '__FILE_DID_NOT_EXIST__',
+            timestamp: Date.now(),
+          });
+        }
+      },
+      askUserQuestion: async (question: string) => {
+        console.log(
+          '\n' +
+            chalk.bgYellow.black.bold(' ? QUESTION ') +
+            ' ' +
+            chalk.yellow.bold(question) +
+            '\n',
+        );
+        while (true) {
+          const answer = await rl.question(
+            chalk.yellow.bold('➤ ') + chalk.white.bold('Enter clarification: '),
+          );
+          const trimmedAns = answer.trim();
+          if (trimmedAns.length > 0) {
+            return trimmedAns;
+          }
+          console.log(chalk.yellow('Please provide a non-empty response to continue.'));
+        }
+      },
+    };
+
+    const result = await runMachCode(prompt, mergedOptions);
+
+    // Update session tokens & history
+    const promptTokens = Math.ceil(prompt.length / 4);
+    const completionTokens = Math.ceil(
+      (result.raceResult.parseResult.visibleOutput.length || 80) / 4,
+    );
+    tokenStats.estimatedPromptTokens += promptTokens;
+    tokenStats.estimatedCompletionTokens += completionTokens;
+    tokenStats.totalTurns += 1;
+
+    sessionHistory.push({ role: 'user', content: prompt });
+    const assistantOutput =
+      result.raceResult.parseResult.visibleOutput.trim() ||
+      (result.executionSummary.modifiedFiles.length > 0
+        ? `Modified files: ${result.executionSummary.modifiedFiles.join(', ')}`
+        : 'Task completed.');
+    sessionHistory.push({ role: 'assistant', content: assistantOutput });
+
+    return result;
+  };
+
+  const commandContext: CommandContext = {
+    baseDir,
+    lightModel,
+    heavyModel,
+    handoffWindowMs,
+    apiKey: options.apiKey,
+    fetchImpl: options.fetchImpl,
+    sessionHistory,
+    addedContextFiles,
+    fileSnapshots,
+    tokenStats,
+    rl,
+    shouldExit: false,
+    runMachCode: executeInstruction,
+  };
+
+  rl.on('SIGINT', () => {
+    commandContext.shouldExit = true;
+    console.log(chalk.yellow('\n\n👋 Goodbye!\n'));
+    rl.close();
+    process.exit(0);
+  });
+
+  // Execute initial prompt if provided via CLI argument
+  if (options.initialPrompt && options.initialPrompt.trim().length > 0) {
+    const firstPrompt = options.initialPrompt.trim();
+    if (options.writeToStdout ?? true) {
+      console.log(
+        `${chalk.cyan.bold('[machcode✨]')} ${chalk.yellow('>')} ${chalk.white(firstPrompt)}`,
+      );
+    }
+
+    try {
+      if (firstPrompt.startsWith('/')) {
+        await commandRegistry.dispatch(firstPrompt, commandContext);
+      } else {
+        await executeInstruction(firstPrompt);
+      }
+    } catch (err) {
+      console.error(
+        chalk.red.bold(`\n✖ Error: ${err instanceof Error ? err.message : String(err)}\n`),
+      );
+    }
+  }
+
+  // Interactive REPL prompt loop
+  const promptLabel = `${chalk.cyan.bold('[machcode✨]')} ${chalk.yellow('>')} `;
+
+  while (!commandContext.shouldExit) {
+    let userInput = '';
+    try {
+      userInput = await rl.question(promptLabel);
+    } catch {
+      break;
+    }
+
+    const trimmed = userInput.trim();
+
+    if (trimmed.length === 0) {
+      continue;
+    }
+
+    // Dynamic Slash Command Dispatch
+    if (trimmed.startsWith('/')) {
+      await commandRegistry.dispatch(trimmed, commandContext);
+      if (commandContext.shouldExit) {
+        break;
+      }
+      continue;
+    }
+
+    // Standard prompt instruction execution
+    try {
+      await executeInstruction(trimmed);
+    } catch (err) {
+      console.error(
+        chalk.red.bold(`\n✖ Error: ${err instanceof Error ? err.message : String(err)}\n`),
+      );
+    }
+  }
+}
+
 export * from './config/index.js';
 export * from './prompts/sniper.js';
 export * from './utils/streamParser.js';
@@ -447,3 +739,4 @@ export * from './engine/streamRacer.js';
 export * from './engine/executor.js';
 export * from './tools/index.js';
 export * from './tools/nvidiaSkills.js';
+export * from './commands/index.js';

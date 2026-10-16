@@ -34,6 +34,14 @@ export function getConfigPath(): string {
  * Returns null if the file does not exist or has no valid API key.
  */
 export async function loadConfig(): Promise<MachCodeConfig | null> {
+  if (process.env.NVIDIA_API_KEY && process.env.NVIDIA_API_KEY.trim().length > 0) {
+    return {
+      nvidiaApiKey: process.env.NVIDIA_API_KEY.trim(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   const configPath = getConfigPath();
   try {
     const raw = await fs.readFile(configPath, 'utf-8');

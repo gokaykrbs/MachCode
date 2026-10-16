@@ -80,6 +80,15 @@ export interface RaceModelsOptions {
    * Whether StreamParser should interactively prompt on QUESTION.
    */
   promptOnQuestion?: boolean;
+  /**
+   * Prior conversation messages for multi-turn session context retention.
+   */
+  messages?: ChatMessage[];
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
 }
 
 export interface RaceModelsResult {
@@ -148,9 +157,16 @@ async function* streamChatCompletionTokens(params: {
   model: string;
   systemPrompt: string;
   userPrompt: string;
+  messages?: ChatMessage[];
   signal: AbortSignal;
   fetchImpl: typeof fetch;
 }): AsyncGenerator<string, void, unknown> {
+  const requestMessages: ChatMessage[] = [
+    { role: 'system', content: params.systemPrompt },
+    ...(params.messages ?? []),
+    { role: 'user', content: params.userPrompt },
+  ];
+
   const response = await params.fetchImpl(params.endpoint, {
     method: 'POST',
     headers: {
@@ -160,10 +176,7 @@ async function* streamChatCompletionTokens(params: {
     },
     body: JSON.stringify({
       model: params.model,
-      messages: [
-        { role: 'system', content: params.systemPrompt },
-        { role: 'user', content: params.userPrompt },
-      ],
+      messages: requestMessages,
       stream: true,
       temperature: 0.1,
     }),
@@ -386,6 +399,7 @@ export async function raceModels(
         model: lightModel,
         systemPrompt,
         userPrompt: prompt,
+        messages: options.messages,
         signal: lightController.signal,
         fetchImpl,
       });
@@ -431,6 +445,7 @@ export async function raceModels(
         model: heavyModel,
         systemPrompt,
         userPrompt: prompt,
+        messages: options.messages,
         signal: heavyController.signal,
         fetchImpl,
       });

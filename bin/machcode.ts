@@ -8,6 +8,7 @@ import {
   OFFICIAL_NVIDIA_SKILLS_CATALOG,
   ensureConfig,
   runMachCode,
+  startRepl,
 } from '../src/index.js';
 
 const program = new Command();
@@ -26,7 +27,7 @@ program
     'Streaming handoff window in milliseconds',
     String(DEFAULT_HANDOFF_WINDOW_MS),
   )
-  .argument('[prompt...]', 'Coding instruction (e.g. mach "update the login component")')
+  .argument('[prompt...]', 'Optional coding instruction to launch in interactive REPL session')
   .action(
     async (
       promptParts: string[],
@@ -37,15 +38,12 @@ program
         window: string;
       },
     ) => {
-      if (!promptParts || promptParts.length === 0) {
-        program.help();
-        return;
-      }
-
-      const fullPrompt = promptParts.join(' ').trim();
+      const initialPrompt =
+        promptParts && promptParts.length > 0 ? promptParts.join(' ').trim() : undefined;
       const handoffWindowMs = Number.parseInt(options.window, 10) || DEFAULT_HANDOFF_WINDOW_MS;
 
-      await runMachCode(fullPrompt, {
+      await startRepl({
+        initialPrompt,
         targetFilePath: options.file,
         lightModel: options.lightModel,
         heavyModel: options.heavyModel,
