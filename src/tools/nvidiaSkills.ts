@@ -237,9 +237,12 @@ export async function syncNvidiaSkills(options?: {
 
   await fs.mkdir(cacheDir, { recursive: true, mode: 0o700 });
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
   try {
     const response = await fetchImpl(`${NVIDIA_SKILLS_RAW_BASE_URL}/README.md`, {
       headers: { Accept: 'text/plain' },
+      signal: controller.signal,
     });
 
     if (response.ok) {
@@ -250,6 +253,8 @@ export async function syncNvidiaSkills(options?: {
     }
   } catch {
     // Fall back to cached catalog or built-in verified catalog
+  } finally {
+    clearTimeout(timer);
   }
 
   try {
@@ -305,10 +310,13 @@ export async function loadNvidiaSkill(
   }
 
   // 2. Fetch live from https://raw.githubusercontent.com/NVIDIA/skills/main/skills/<name>/SKILL.md
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
   try {
     const url = `${NVIDIA_SKILLS_RAW_BASE_URL}/${catalogMatch.repoPath}`;
     const response = await fetchImpl(url, {
       headers: { Accept: 'text/plain' },
+      signal: controller.signal,
     });
 
     if (response.ok) {
@@ -327,6 +335,8 @@ export async function loadNvidiaSkill(
     }
   } catch {
     // Fall back to synthesized skill instructions
+  } finally {
+    clearTimeout(timer);
   }
 
   // 3. Built-in verified fallback so offline execution never fails

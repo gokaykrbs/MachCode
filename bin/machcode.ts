@@ -3,8 +3,6 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import {
   DEFAULT_HANDOFF_WINDOW_MS,
-  DEFAULT_HEAVY_MODEL,
-  DEFAULT_LIGHT_MODEL,
   OFFICIAL_NVIDIA_SKILLS_CATALOG,
   ensureConfig,
   runMachCode,
@@ -20,8 +18,8 @@ program
   )
   .version('0.1.0')
   .option('-f, --file <path>', 'Target file path to read and overwrite')
-  .option('-l, --light-model <model>', 'Lightweight fast NIM model', DEFAULT_LIGHT_MODEL)
-  .option('-m, --heavy-model <model>', 'Heavyweight deep coding NIM model', DEFAULT_HEAVY_MODEL)
+  .option('-l, --light-model <model>', 'Lightweight fast NIM model')
+  .option('-m, --heavy-model <model>', 'Heavyweight deep coding NIM model')
   .option(
     '-w, --window <ms>',
     'Streaming handoff window in milliseconds',
@@ -33,8 +31,8 @@ program
       promptParts: string[],
       options: {
         file?: string;
-        lightModel: string;
-        heavyModel: string;
+        lightModel?: string;
+        heavyModel?: string;
         window: string;
       },
     ) => {

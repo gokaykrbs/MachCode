@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/gokaykrbs/MachCode/releases"><img src="https://img.shields.io/badge/version-v0.1.0-blue.svg?style=flat-square" alt="version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
-  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-29%2F29%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-39%2F39%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.6-blue.svg?style=flat-square&logo=typescript" alt="TypeScript" /></a>
   <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-Integrated-76B900.svg?style=flat-square&logo=nvidia" alt="NVIDIA NIM" /></a>
   <a href="#"><img src="https://img.shields.io/badge/REPL-Interactive-cyan.svg?style=flat-square" alt="REPL Mode" /></a>
@@ -84,7 +84,11 @@ Rather than a fragile switch statement, MachCode implements an open **Command Pa
 ## ✨ Key Features
 
 - 🏎️ **Streaming Handoff Architecture:** Multi-endpoint concurrent streaming with deterministic `AbortController` handoffs and zero-flicker ANSI cursor rewrites.
-- 🔁 **Continuous Interactive REPL:** Dedicated `[machcode✨] > ` developer shell with live context retention across multi-step edits.
+- 🤖 **Zero-Config Autonomous AutoRouter:** Dynamically discovers active NVIDIA NIM models in the background, autonomously routing smaller parameter models (7B/8B) as Lightweight and deep coding/reasoning models (32B/70B+) as Heavyweight with zero manual configuration menus.
+- 🔄 **Self-Healing Deprecation Recovery:** Silently catches HTTP 410 and 404 model deprecation errors, re-scans active NIM endpoints, re-routes models, and retries the prompt without interrupting workflow.
+- ⏱️ **Strict 15s Timeout & Deadlock Safety:** Global `AbortController` and inactivity watchdogs on all HTTP requests and token streams ensure the CLI never deadlocks or hangs under network drops.
+- 🌑 **Minimalist Dark Mode Terminal UI:** Eye-friendly, elegant terminal experience featuring a clean, quiet status dashboard and dedicated `[machcode✨] > ` REPL prompt.
+- 🔁 **Continuous Interactive REPL:** Dedicated interactive developer shell with live context retention across multi-step edits.
 - ⚡ **Scalable Slash Command System:** 17+ built-in slash commands organized by Category: _Context & Memory_, _Execution Modes_, _Safety & Git_, and _System_.
 - 🎯 **The "Sniper" System Prompt:** Synthesized from top-tier coding agent rules: zero conversational filler, zero greetings, strict DRY code fences, and exact file path header annotations.
 - 🛑 **"Stop & Ask" Protocol:** If critical types, parameters, or specifications are missing, MachCode halts execution and prompts you with `? QUESTION: [details]` instead of guessing or hallucinating.
@@ -161,8 +165,22 @@ export NVIDIA_API_KEY="nvapi-your-api-key"
 Once launched, you will be greeted by the MachCode terminal banner and dropped into the interactive loop:
 
 ```text
-⚡ MACHCODE CLI v1.0.0 — Speed-driven autonomous code editor (NVIDIA NIM)
-Type your instruction, or /clear to clear screen, /exit to quit.
+  __  __     _     ____  _   _   ____  ___   ____   _____    ____  _      ___ 
+ |  \/  |   / \   / ___|| | | | / ___|/ _ \ |  _ \ | ____|  / ___|| |    |_ _|
+ | |\/| |  / _ \ | |    | |_| || |   | | | || | | ||  _|   | |    | |     | | 
+ | |  | | / ___ \| |___ |  _  || |___| |_| || |_| || |___  | |___ | |___  | | 
+ |_|  |_|/_/   \_\\____||_| |_| \____|\___/ |____/ |_____|  \____||_____||___|
+                                                                              
+
+╭───────────────────────────────────────────────────────────╮
+│                                                           │
+│   Directory:      D:\My Projects\MachCode                 │
+│   Active Session: mc_a8f92b1c                             │
+│   Skills:         FileSystem, Terminal, NVIDIA NIM        │
+│                                                           │
+╰───────────────────────────────────────────────────────────╯
+
+Type your instruction, /help for commands, /exit to quit.
 
 [machcode✨] > Add a responsive navbar with dark mode toggle in components/Navbar.tsx
 [machcode✨] > /diff
@@ -249,23 +267,25 @@ machcode/
 │   │   ├── git.ts           # Safety & Git commands (/undo, /diff, /commit)
 │   │   ├── system.ts        # System commands (/help, /tokens, /run, /config, /clear, /exit)
 │   │   └── index.ts         # Registry initializer & command aggregator
-│   ├── config/              # Configuration manager (~/.machcode/config.json)
+│   ├── config/              # Configuration manager (~/.machcode/config.json) & dynamic model discovery
 │   ├── engine/
-│   │   ├── streamRacer.ts   # Streaming Handoff Racing Engine with AbortControllers
+│   │   ├── autoRouter.ts    # Autonomous model categorization (small fast vs large deep models)
+│   │   ├── streamRacer.ts   # Streaming Handoff Racing Engine with AbortControllers & strict timeouts
 │   │   └── executor.ts      # Surgical code applier, write_file executor & onBeforeWrite snapshots
 │   ├── prompts/
 │   │   └── sniper.ts        # Zero-chatter, anti-hallucination "Sniper" system prompt
 │   ├── tools/
 │   │   ├── index.ts         # OpenAI tool calling schemas (read_file, write_file)
-│   │   └── nvidiaSkills.ts  # Automatic NVIDIA/skills catalog loader & caching
+│   │   └── nvidiaSkills.ts  # Automatic NVIDIA/skills catalog loader, caching & timeout guards
 │   ├── utils/
 │   │   └── streamParser.ts  # Stream state machine (hides <plan>, handles QUESTION:)
-│   └── index.ts             # REPL loop (startRepl) & runMachCode orchestrator
+│   └── index.ts             # REPL loop (startRepl), error boundaries & runMachCode orchestrator
 ├── package.json
 └── tsconfig.json
 ```
 
-- **`src/engine/streamRacer.ts`**: Connects concurrently to SSE chat completions endpoints. Choreographs the 3-second handoff race, monitors token arrival, and cleans terminal lines via ANSI sequences when upgrading streams.
+- **`src/engine/autoRouter.ts`**: Autonomously scores and routes active NIM models by parameter size and instruction capability, eliminating manual model selection menus.
+- **`src/engine/streamRacer.ts`**: Connects concurrently to SSE chat completions endpoints. Choreographs the 3-second handoff race, monitors token arrival, guards against network hangs with strict timeouts, and cleans terminal lines via ANSI sequences when upgrading streams.
 - **`src/commands/commandHandler.ts`**: Dynamic registry mapping command names and aliases to modular handlers without hardcoded switch-case structures.
 - **`src/prompts/sniper.ts`**: The hyper-disciplined system prompt enforcing concise, zero-filler output, mandatory `// file: <path>` code fence headers, and the Stop & Ask protocol.
 - **`src/engine/executor.ts`**: Parses code blocks, validates file boundaries, invokes pre-write snapshot hooks for `/undo`, and generates formatted modification summaries.
@@ -275,7 +295,7 @@ machcode/
 
 ## 🧪 Testing
 
-MachCode ships with an exhaustive, enterprise-grade test suite covering the Streaming Handoff Racing engine, executor hooks, tool schemas, Stop & Ask loops, multi-turn REPL interactions, and all 17 slash commands (29 tests across 8 suites, 100% passing):
+MachCode ships with an exhaustive, enterprise-grade test suite covering autonomous AutoRouting, dynamic NIM model discovery, streaming handoff racing, strict timeout boundaries, REPL recovery, Stop & Ask loops, multi-turn context retention, and all slash commands (39 tests across 10 suites, 100% passing):
 
 ```bash
 # Run the complete test suite (builds and executes all suites)
@@ -290,15 +310,17 @@ npm run format:check
 
 ```text
 ✔ Slash Command Registry & Command Handler (11 tests pass)
+✔ AutoRouter & Autonomous Model Routing (5 tests pass)
+✔ Dynamic Model Fetching & Configuration (3 tests pass)
 ✔ Tools & NVIDIA Official Skills Integration (3 tests pass)
 ✔ Executor (src/engine/executor.ts) (2 tests pass)
-✔ Streaming Handoff Engine (raceModels) (5 tests pass)
+✔ Streaming Handoff Engine (raceModels) (6 tests pass)
 ✔ End-to-End CLI Execution Flow (runMachCode) (1 test pass)
-✔ Interactive REPL Mode (startRepl) (3 tests pass)
+✔ Interactive REPL Mode (startRepl) (4 tests pass)
 ✔ Sniper System Prompt (1 test pass)
 ✔ StreamParser (3 tests pass)
 
-ℹ tests 29 | pass 29 | fail 0
+ℹ tests 39 | pass 39 | fail 0
 ```
 
 ---

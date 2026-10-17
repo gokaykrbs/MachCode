@@ -116,15 +116,15 @@ export const runCommand: SlashCommand = {
 
 export const configCommand: SlashCommand = {
   name: 'config',
-  description: 'View or reconfigure NVIDIA NIM API credentials',
+  description: 'View or refresh autonomous model routing & API key',
   category: 'System',
-  usage: '/config',
-  aliases: ['setup', 'apikey'],
-  execute: async (_args: string, _context: CommandContext) => {
+  usage: '/config [refresh|key]',
+  aliases: ['setup', 'apikey', 'models', 'router'],
+  execute: async (args: string, context: CommandContext) => {
     const configPath = getConfigPath();
     const existing = await loadConfig();
 
-    console.log(chalk.cyan.bold('\n⚙ MachCode Configuration:'));
+    console.log(chalk.cyan.bold('\n⚙ MachCode Autonomous Configuration:'));
     console.log(`  Config File: ${chalk.gray(configPath)}`);
     console.log(
       `  API Key:     ${
@@ -133,16 +133,52 @@ export const configCommand: SlashCommand = {
               `Configured (${existing.nvidiaApiKey.slice(0, 10)}...${existing.nvidiaApiKey.slice(-4)})`,
             )
           : chalk.red('Missing')
-      }\n`,
+      }`,
+    );
+    console.log(
+      `  Fast Model:  ${chalk.magenta(existing?.lightModel || context.lightModel || 'Auto-routing...')}`,
+    );
+    console.log(
+      `  Smart Model: ${chalk.magenta(existing?.heavyModel || context.heavyModel || 'Auto-routing...')}\n`,
     );
 
-    try {
-      const newKey = await promptForApiKey();
-      await saveConfig(newKey);
-      console.log(chalk.green.bold('✔ Configuration successfully updated!\n'));
-    } catch (err) {
-      console.error(chalk.red(`✖ Failed to update configuration: ${String(err)}`));
+    const sub = (args || '').trim().toLowerCase();
+    if (sub === 'refresh' || sub === 'models') {
+      const apiKey = existing?.nvidiaApiKey ?? context.apiKey;
+      if (!apiKey) {
+        console.log(chalk.red('Cannot refresh: NVIDIA_API_KEY is not set.\n'));
+        return;
+      }
+      console.log(chalk.cyan('Running AutoRouter scan on NVIDIA NIM active models...'));
+      const { autoAssignAndSaveModels } = await import('../config/index.js');
+      const updated = await autoAssignAndSaveModels(apiKey, undefined, context.fetchImpl);
+      context.lightModel = updated.lightModel;
+      context.heavyModel = updated.heavyModel;
+      console.log(
+        chalk.green.bold('✔ AutoRouter updated models:') +
+          chalk.white(`\n  ⚡ Fast:  ${updated.lightModel}\n  🧠 Smart: ${updated.heavyModel}\n`),
+      );
+      return;
     }
+
+    if (sub === 'key' || sub === 'apikey') {
+      const newKey = await promptForApiKey();
+      const { autoAssignAndSaveModels } = await import('../config/index.js');
+      const updated = await autoAssignAndSaveModels(newKey, undefined, context.fetchImpl);
+      context.apiKey = newKey;
+      context.lightModel = updated.lightModel;
+      context.heavyModel = updated.heavyModel;
+      console.log(chalk.green.bold('✔ API Key & AutoRouter models successfully updated!\n'));
+      return;
+    }
+
+    console.log(
+      chalk.dim('Tip: Use ') +
+        chalk.yellow('/config refresh') +
+        chalk.dim(' to re-scan active NIM models, or ') +
+        chalk.yellow('/config key') +
+        chalk.dim(' to update your API key.\n'),
+    );
   },
 };
 
@@ -152,9 +188,14 @@ export const clearCommand: SlashCommand = {
   category: 'System',
   usage: '/clear',
   aliases: ['cls'],
-  execute: async (_args: string, _context: CommandContext) => {
+  execute: async (_args: string, context: CommandContext) => {
     console.clear();
-    printReplBanner();
+    printReplBanner({
+      cwd: context.baseDir,
+      sessionId: context.sessionId,
+      lightModel: context.lightModel,
+      heavyModel: context.heavyModel,
+    });
   },
 };
 

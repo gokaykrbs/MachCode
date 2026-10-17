@@ -78,6 +78,8 @@ describe('End-to-End CLI Execution Flow (runMachCode)', () => {
       const result = await runMachCode('update the login component', {
         baseDir: tmpWorkspace,
         apiKey: 'nvapi-test-e2e',
+        lightModel: 'meta/llama-3.1-8b-instruct',
+        heavyModel: 'meta/llama-3.1-70b-instruct',
         handoffWindowMs: 50,
         writeToStdout: false,
         fetchImpl: mockFetch,
@@ -177,6 +179,8 @@ describe('Interactive REPL Mode (startRepl)', () => {
       await startRepl({
         baseDir: tmpWorkspace,
         apiKey: 'nvapi-test-repl',
+        lightModel: 'meta/llama-3.1-8b-instruct',
+        heavyModel: 'meta/llama-3.1-70b-instruct',
         handoffWindowMs: 50,
         writeToStdout: false,
         fetchImpl: mockFetch,
@@ -245,6 +249,52 @@ describe('Interactive REPL Mode (startRepl)', () => {
       });
 
       assert.ok(true);
+    } finally {
+      await fs.rm(tmpWorkspace, { recursive: true, force: true });
+    }
+  });
+
+  it('catches network timeout or API failure and unlocks REPL for subsequent instructions', async () => {
+    const tmpWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), 'machcode-repl-timeout-'));
+    try {
+      const hangingFetch: typeof fetch = async (input, init) => {
+        const url = String(input);
+        if (url.endsWith('README.md')) {
+          return new Response('', { status: 404 });
+        }
+        const signal = init?.signal;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+          });
+        });
+      };
+
+      let idx = 0;
+      const answers = ['hello', '/exit'];
+      const askedPrompts: string[] = [];
+      const testRl = {
+        question: async (p: string) => {
+          askedPrompts.push(p);
+          return answers[idx++] ?? '/exit';
+        },
+        close: () => {},
+        on: () => {},
+      } as unknown as import('node:readline/promises').Interface;
+
+      const { startRepl } = await import('./index.js');
+      await startRepl({
+        baseDir: tmpWorkspace,
+        apiKey: 'nvapi-test-timeout',
+        lightModel: 'meta/llama-3.1-8b-instruct',
+        heavyModel: 'meta/llama-3.1-70b-instruct',
+        timeoutMs: 50,
+        writeToStdout: false,
+        fetchImpl: hangingFetch,
+        rlInterface: testRl,
+      });
+
+      assert.equal(askedPrompts.length, 2);
     } finally {
       await fs.rm(tmpWorkspace, { recursive: true, force: true });
     }

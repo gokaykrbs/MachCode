@@ -8,12 +8,27 @@ import ora from 'ora';
 
 export interface MachCodeConfig {
   nvidiaApiKey: string;
+  lightModel: string;
+  heavyModel: string;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface NvidiaModelInfo {
+  id: string;
+  object?: string;
+  created?: number;
+  owned_by?: string;
+}
+
+export interface NvidiaModelsResponse {
+  data?: NvidiaModelInfo[];
+}
+
 const CONFIG_DIR_NAME = '.machcode';
 const CONFIG_FILE_NAME = 'config.json';
+export const DEFAULT_NVIDIA_MODELS_ENDPOINT = 'https://integrate.api.nvidia.com/v1/models';
+export const DEFAULT_API_TIMEOUT_MS = 15000;
 
 /**
  * Returns the absolute path to the ~/.machcode directory.
@@ -34,35 +49,43 @@ export function getConfigPath(): string {
  * Returns null if the file does not exist or has no valid API key.
  */
 export async function loadConfig(): Promise<MachCodeConfig | null> {
-  if (process.env.NVIDIA_API_KEY && process.env.NVIDIA_API_KEY.trim().length > 0) {
-    return {
-      nvidiaApiKey: process.env.NVIDIA_API_KEY.trim(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
   const configPath = getConfigPath();
+  let parsed: Partial<MachCodeConfig> | null = null;
+
   try {
     const raw = await fs.readFile(configPath, 'utf-8');
-    const parsed = JSON.parse(raw) as Partial<MachCodeConfig>;
-    if (typeof parsed.nvidiaApiKey === 'string' && parsed.nvidiaApiKey.trim().length > 0) {
-      return {
-        nvidiaApiKey: parsed.nvidiaApiKey.trim(),
-        createdAt: parsed.createdAt ?? new Date().toISOString(),
-        updatedAt: parsed.updatedAt ?? new Date().toISOString(),
-      };
-    }
-    return null;
+    parsed = JSON.parse(raw) as Partial<MachCodeConfig>;
   } catch {
+    // Config file does not exist or is invalid JSON
+  }
+
+  const envKey =
+    process.env.NVIDIA_API_KEY && process.env.NVIDIA_API_KEY.trim().length > 0
+      ? process.env.NVIDIA_API_KEY.trim()
+      : undefined;
+
+  const apiKey = envKey ?? parsed?.nvidiaApiKey;
+  if (!apiKey || apiKey.trim().length === 0) {
     return null;
   }
+
+  return {
+    nvidiaApiKey: apiKey.trim(),
+    lightModel: parsed?.lightModel ?? '',
+    heavyModel: parsed?.heavyModel ?? '',
+    createdAt: parsed?.createdAt ?? new Date().toISOString(),
+    updatedAt: parsed?.updatedAt ?? new Date().toISOString(),
+  };
 }
 
 /**
  * Saves the configuration securely to ~/.machcode/config.json with restricted permissions.
  */
-export async function saveConfig(nvidiaApiKey: string): Promise<MachCodeConfig> {
+export async function saveConfig(
+  nvidiaApiKey: string,
+  lightModel?: string,
+  heavyModel?: string,
+): Promise<MachCodeConfig> {
   const configDir = getConfigDir();
   const configPath = getConfigPath();
   const existing = await loadConfig();
@@ -70,6 +93,8 @@ export async function saveConfig(nvidiaApiKey: string): Promise<MachCodeConfig> 
 
   const config: MachCodeConfig = {
     nvidiaApiKey: nvidiaApiKey.trim(),
+    lightModel: (lightModel ?? existing?.lightModel ?? '').trim(),
+    heavyModel: (heavyModel ?? existing?.heavyModel ?? '').trim(),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
@@ -110,24 +135,132 @@ export async function promptForApiKey(): Promise<string> {
 }
 
 /**
- * Ensures a valid configuration exists in ~/.machcode/config.json.
- * Prompts the user on first run if no configuration file is found.
+ * Dynamically fetches active models from the NVIDIA NIM models endpoint with a strict timeout.
  */
-export async function ensureConfig(): Promise<MachCodeConfig> {
-  const existing = await loadConfig();
-  if (existing) {
-    return existing;
-  }
+export async function fetchNvidiaModels(
+  apiKey: string,
+  baseUrl = 'https://integrate.api.nvidia.com/v1',
+  fetchImpl: typeof fetch = globalThis.fetch,
+  timeoutMs = DEFAULT_API_TIMEOUT_MS,
+): Promise<string[]> {
+  const endpoint = `${baseUrl.replace(/\/+$/, '')}/models`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort(
+      new Error(`Network timeout: NVIDIA NIM model fetching exceeded ${timeoutMs}ms.`),
+    );
+  }, timeoutMs);
 
-  const apiKey = await promptForApiKey();
-  const spinner = ora('Saving configuration securely to ~/.machcode/config.json...').start();
-
+  let response: Response;
   try {
-    const saved = await saveConfig(apiKey);
-    spinner.succeed(chalk.green(`Configuration saved to ${getConfigPath()}`));
-    return saved;
-  } catch (error) {
-    spinner.fail(chalk.red('Failed to save configuration.'));
-    throw error;
+    response = await fetchImpl(endpoint, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+      const timeoutError = new Error(
+        `Network timeout: NVIDIA NIM models API did not respond within ${timeoutMs / 1000}s.`,
+      );
+      (timeoutError as unknown as { isTimeout: boolean }).isTimeout = true;
+      throw timeoutError;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
+
+  if (!response.ok) {
+    let errorText = '';
+    try {
+      errorText = await response.text();
+    } catch {
+      // Ignore
+    }
+    throw new Error(
+      `Failed to fetch NVIDIA NIM models (HTTP ${response.status}): ${errorText || response.statusText}`,
+    );
+  }
+
+  const json = (await response.json()) as NvidiaModelsResponse;
+  const list = Array.isArray(json.data)
+    ? json.data
+        .map((m) => m.id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    : [];
+
+  list.sort((a, b) => a.localeCompare(b));
+  return list;
+}
+
+import {
+  autoRouteModels,
+  type AutoRouteResult,
+  type AutoRouterOptions,
+} from '../engine/autoRouter.js';
+
+export interface EnsureConfigOptions {
+  apiKey?: string;
+  baseUrl?: string;
+  fetchImpl?: typeof fetch;
+  forceRefresh?: boolean;
+}
+
+/**
+ * Autonomously fetches active models from NVIDIA NIM, executes AutoRouter categorization,
+ * and saves the selected Lightweight and Heavyweight models to ~/.machcode/config.json silently.
+ */
+export async function autoAssignAndSaveModels(
+  apiKey: string,
+  baseUrl = 'https://integrate.api.nvidia.com/v1',
+  fetchImpl: typeof fetch = globalThis.fetch,
+  options: AutoRouterOptions = {},
+): Promise<AutoRouteResult> {
+  let availableModels: string[] = [];
+  try {
+    availableModels = await fetchNvidiaModels(apiKey, baseUrl, fetchImpl);
+  } catch {
+    // If fetching fails (e.g. offline, network glitch, or mock fetch in tests), autoRouteModels uses safe defaults
+  }
+
+  const { lightModel, heavyModel } = autoRouteModels(availableModels, options);
+  await saveConfig(apiKey, lightModel, heavyModel);
+  return { lightModel, heavyModel };
+}
+
+/**
+ * Ensures a valid configuration exists in ~/.machcode/config.json.
+ * Prompts the user on first run if no API key is found, then autonomously
+ * scans and assigns active models without prompting.
+ */
+export async function ensureConfig(options: EnsureConfigOptions = {}): Promise<MachCodeConfig> {
+  let config = await loadConfig();
+  let apiKey = options.apiKey ?? config?.nvidiaApiKey;
+
+  if (!apiKey || apiKey.trim().length === 0) {
+    apiKey = await promptForApiKey();
+    config = await saveConfig(apiKey);
+  }
+
+  // If models are not configured or a refresh was forced, auto-assign autonomously
+  if (!config?.lightModel || !config?.heavyModel || options.forceRefresh) {
+    const { lightModel, heavyModel } = await autoAssignAndSaveModels(
+      apiKey,
+      options.baseUrl,
+      options.fetchImpl,
+    );
+    return {
+      nvidiaApiKey: apiKey,
+      lightModel,
+      heavyModel,
+      createdAt: config?.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  return config;
 }

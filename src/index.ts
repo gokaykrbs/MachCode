@@ -4,12 +4,13 @@ import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import chalk from 'chalk';
 import ora from 'ora';
-import { ensureConfig } from './config/index.js';
+import figlet from 'figlet';
+import boxen from 'boxen';
+import { autoAssignAndSaveModels, ensureConfig, loadConfig } from './config/index.js';
+import { autoRouteModels, type AutoRouteResult } from './engine/autoRouter.js';
 import { executeParsedCode, type ExecutionSummary } from './engine/executor.js';
 import {
   DEFAULT_HANDOFF_WINDOW_MS,
-  DEFAULT_HEAVY_MODEL,
-  DEFAULT_LIGHT_MODEL,
   raceModels,
   type RaceModelsResult,
 } from './engine/streamRacer.js';
@@ -54,6 +55,10 @@ export interface MachCodeRunOptions {
    * Handoff window in milliseconds. Defaults to 3000 (3 seconds).
    */
   handoffWindowMs?: number;
+  /**
+   * Network and stream timeout in milliseconds. Defaults to 15000 (15 seconds).
+   */
+  timeoutMs?: number;
   /**
    * Optional explicit API key (skips interactive first-run config prompt when provided).
    */
@@ -363,12 +368,16 @@ export async function runMachCode(
   options: MachCodeRunOptions = {},
 ): Promise<MachCodeRunResult> {
   const baseDir = options.baseDir ?? process.cwd();
-  const lightModel = options.lightModel ?? DEFAULT_LIGHT_MODEL;
-  const heavyModel = options.heavyModel ?? DEFAULT_HEAVY_MODEL;
+  const config = await ensureConfig({
+    apiKey: options.apiKey,
+    fetchImpl: options.fetchImpl,
+  });
+  let lightModel = options.lightModel ?? config.lightModel;
+  let heavyModel = options.heavyModel ?? config.heavyModel;
   const writeToStdout = options.writeToStdout ?? true;
   const maxQuestionRounds = options.maxQuestionRounds ?? 3;
 
-  const apiKey = options.apiKey ?? (await ensureConfig()).nvidiaApiKey;
+  const apiKey = options.apiKey ?? config.nvidiaApiKey;
   const toolsLoaded = await getIntegratedTools({ fetchImpl: options.fetchImpl });
 
   if (writeToStdout) {
@@ -376,8 +385,7 @@ export async function runMachCode(
       '\n' +
         chalk.bgCyan.black.bold(' MACHCODE ') +
         ' ' +
-        chalk.cyan.bold('Streaming Handoff Racing Engine') +
-        chalk.gray(` [${lightModel} ⚡ ${heavyModel}]`),
+        chalk.cyan.bold('Streaming Handoff Racing Engine'),
     );
   }
 
@@ -404,45 +412,78 @@ export async function runMachCode(
 
     const startTime = Date.now();
 
-    const raceResult = await raceModels(currentPrompt, lightModel, heavyModel, {
-      apiKey,
-      systemPrompt,
-      tools: toolsLoaded,
-      handoffWindowMs: options.handoffWindowMs,
-      writeToStdout,
-      fetchImpl: options.fetchImpl,
-      promptOnQuestion: false,
-      messages: options.history?.map((m) => ({ role: m.role, content: m.content })),
-      onFirstToken: (model, role) => {
-        if (spinner && spinner.isSpinning) {
-          spinner.stop();
-        }
-        if (writeToStdout && role === 'light') {
-          console.log(
-            chalk.dim(
-              `⚡ First token from lightweight model (${model}) — 3s handoff window active...\n`,
-            ),
-          );
-        } else if (writeToStdout && role === 'heavy' && !handoffTriggered) {
-          console.log(chalk.magenta.bold(`🔥 Streaming from heavyweight model (${model})...\n`));
-        }
-      },
-      onHandoff: ({ fromModel, toModel, elapsedMs }) => {
-        handoffTriggered = true;
-        if (spinner && spinner.isSpinning) {
-          spinner.stop();
-        }
-        if (writeToStdout) {
-          console.log(
-            chalk.bgMagenta.white.bold(' HANDOFF ') +
-              ' ' +
-              chalk.magenta.bold(
-                `Heavyweight (${toModel}) started within ${elapsedMs}ms — aborted ${fromModel} & restarted stream:\n`,
+    let raceResult: RaceModelsResult;
+    try {
+      raceResult = await raceModels(currentPrompt, lightModel, heavyModel, {
+        apiKey,
+        systemPrompt,
+        tools: toolsLoaded,
+        handoffWindowMs: options.handoffWindowMs,
+        timeoutMs: options.timeoutMs,
+        writeToStdout,
+        fetchImpl: options.fetchImpl,
+        promptOnQuestion: false,
+        messages: options.history?.map((m) => ({ role: m.role, content: m.content })),
+        onFirstToken: (model, role) => {
+          if (spinner && spinner.isSpinning) {
+            spinner.stop();
+          }
+          if (writeToStdout && role === 'light') {
+            console.log(
+              chalk.dim(
+                `⚡ First token from lightweight model (${model}) — 3s handoff window active...\n`,
               ),
-          );
-        }
-      },
-    });
+            );
+          } else if (writeToStdout && role === 'heavy' && !handoffTriggered) {
+            console.log(chalk.magenta.bold(`🔥 Streaming from heavyweight model (${model})...\n`));
+          }
+        },
+        onHandoff: ({ fromModel, toModel, elapsedMs }) => {
+          handoffTriggered = true;
+          if (spinner && spinner.isSpinning) {
+            spinner.stop();
+          }
+          if (writeToStdout) {
+            console.log(
+              chalk.bgMagenta.white.bold(' HANDOFF ') +
+                ' ' +
+                chalk.magenta.bold(
+                  `Heavyweight (${toModel}) started within ${elapsedMs}ms — aborted ${fromModel} & restarted stream:\n`,
+                ),
+            );
+          }
+        },
+      });
+    } catch (err: unknown) {
+      if (spinner && spinner.isSpinning) {
+        spinner.stop();
+      }
+
+      const isUnavailable =
+        (err as { status?: number })?.status === 410 ||
+        (err as { status?: number })?.status === 404 ||
+        (err instanceof Error &&
+          (err.message.includes('410') ||
+            err.message.includes('404') ||
+            err.message.includes('HTTP 410') ||
+            err.message.includes('HTTP 404')));
+
+      if (isUnavailable) {
+        // Auto-Healing: Silently re-fetch /v1/models, run AutoRouter to find next best active models, and retry
+        const deprecated = new Set<string>();
+        const badModel = (err as { model?: string })?.model || lightModel;
+        deprecated.add(badModel);
+
+        const newModels = await autoAssignAndSaveModels(apiKey, undefined, options.fetchImpl, {
+          exclude: deprecated,
+        });
+        lightModel = newModels.lightModel;
+        heavyModel = newModels.heavyModel;
+        continue;
+      }
+
+      throw err;
+    }
 
     if (spinner && spinner.isSpinning) {
       spinner.stop();
@@ -517,40 +558,72 @@ export interface ReplOptions extends MachCodeRunOptions {
   rlInterface?: readline.Interface;
 }
 
+export interface ReplBannerOptions {
+  cwd?: string;
+  sessionId?: string;
+  lightModel?: string;
+  heavyModel?: string;
+}
+
 /**
- * Displays the MachCode ASCII branding banner in the terminal.
+ * Displays the MachCode ASCII branding banner and Welcome/Status Dashboard.
  */
-export function printReplBanner(): void {
-  console.log(
-    chalk.cyan.bold('\n⚡ MACHCODE CLI v1.0.0') +
-      chalk.gray(' — Speed-driven autonomous code editor (NVIDIA NIM)\n') +
-      chalk.dim('Type your instruction, or ') +
-      chalk.yellow('/clear') +
-      chalk.dim(' to clear screen, ') +
-      chalk.yellow('/exit') +
-      chalk.dim(' to quit.\n'),
-  );
+export function printReplBanner(options: ReplBannerOptions = {}): void {
+  const ascii = figlet.textSync('MACHCODE CLI', {
+    font: 'Standard',
+    horizontalLayout: 'fitted',
+  });
+  console.log(`\n${chalk.white(ascii)}\n`);
+
+  const currentDir = options.cwd ?? process.cwd();
+  const sessionId = options.sessionId ?? `sess_${Math.random().toString(36).substring(2, 10)}`;
+
+  const content = [
+    `${chalk.dim('Directory:')}      ${chalk.white(currentDir)}`,
+    `${chalk.dim('Active Session:')} ${chalk.white(sessionId)}`,
+    `${chalk.dim('Skills:')}         ${chalk.white('FileSystem, Terminal, NVIDIA NIM')}`,
+  ].join('\n');
+
+  const dashboard = boxen(content, {
+    padding: 1,
+    margin: { top: 0, bottom: 1, left: 0, right: 0 },
+    borderColor: 'gray',
+    borderStyle: 'round',
+  });
+
+  console.log(dashboard);
+  console.log(chalk.dim('Type your instruction, /help for commands, /exit to quit.\n'));
 }
 
 /**
  * Starts the continuous interactive REPL loop (Read-Eval-Print Loop).
  * 1. Initializes configuration and ensures valid NVIDIA_API_KEY (prompting once if missing).
- * 2. Displays startup banner and prompt: `[machcode✨] > `
+ * 2. Displays minimalist status dashboard and prompt: `[machcode✨] > `
  * 3. Keeps an in-memory session history array for multi-turn context retention.
  * 4. Routes slash commands starting with `/` dynamically through the CommandRegistry.
  * 5. Passes non-slash user instructions to the Streaming Handoff Racing Engine.
  * 6. Records pre-modification file snapshots for `/undo` revert capabilities.
- * 7. Never exits the process on completion or errors — always presents the prompt again.
+ * 7. Gracefully handles 410/404 model errors and triggers dynamic model re-selection.
+ * 8. Never exits the process on completion or errors — always presents the prompt again.
  */
 export async function startRepl(options: ReplOptions = {}): Promise<void> {
-  // Step 1: Ensure NVIDIA_API_KEY configuration
-  if (!options.apiKey) {
-    await ensureConfig();
-  }
+  const config = await ensureConfig({
+    apiKey: options.apiKey,
+    fetchImpl: options.fetchImpl,
+  });
 
-  // Display startup banner
+  const baseDir = options.baseDir ?? process.cwd();
+  let lightModel = options.lightModel ?? config.lightModel;
+  let heavyModel = options.heavyModel ?? config.heavyModel;
+  const handoffWindowMs = options.handoffWindowMs ?? DEFAULT_HANDOFF_WINDOW_MS;
+  const sessionId = `mc_${Math.random().toString(36).substring(2, 10)}`;
+
+  // Display startup dashboard
   if (options.writeToStdout ?? true) {
-    printReplBanner();
+    printReplBanner({
+      cwd: baseDir,
+      sessionId,
+    });
   }
 
   // Session state tracking
@@ -571,11 +644,6 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       input,
       output,
     });
-
-  const baseDir = options.baseDir ?? process.cwd();
-  const lightModel = options.lightModel ?? DEFAULT_LIGHT_MODEL;
-  const heavyModel = options.heavyModel ?? DEFAULT_HEAVY_MODEL;
-  const handoffWindowMs = options.handoffWindowMs ?? DEFAULT_HANDOFF_WINDOW_MS;
 
   // Instruction executor with automatic pre-write file snapshotting & token estimation
   const executeInstruction = async (
@@ -655,7 +723,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     lightModel,
     heavyModel,
     handoffWindowMs,
-    apiKey: options.apiKey,
+    apiKey: options.apiKey ?? config.nvidiaApiKey,
     fetchImpl: options.fetchImpl,
     sessionHistory,
     addedContextFiles,
@@ -663,6 +731,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     tokenStats,
     rl,
     shouldExit: false,
+    sessionId,
     runMachCode: executeInstruction,
   };
 
@@ -672,6 +741,73 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     rl.close();
     process.exit(0);
   });
+
+  const deprecatedModels = new Set<string>();
+
+  const handleExecutionError = async (err: unknown, currentPrompt: string): Promise<boolean> => {
+    const isUnavailable =
+      (err as { status?: number })?.status === 410 ||
+      (err as { status?: number })?.status === 404 ||
+      (err instanceof Error &&
+        (err.message.includes('410') ||
+          err.message.includes('404') ||
+          err.message.includes('HTTP 410') ||
+          err.message.includes('HTTP 404')));
+
+    if (isUnavailable) {
+      // Auto-Healing: Silently re-fetch /v1/models, run AutoRouter to find next best active models, and retry
+      const badModel = (err as { model?: string })?.model || lightModel || heavyModel;
+      deprecatedModels.add(badModel);
+
+      try {
+        const activeApiKey = commandContext.apiKey ?? (await ensureConfig()).nvidiaApiKey;
+        const newModels = await autoAssignAndSaveModels(
+          activeApiKey,
+          undefined,
+          commandContext.fetchImpl,
+          { exclude: deprecatedModels },
+        );
+        commandContext.lightModel = newModels.lightModel;
+        commandContext.heavyModel = newModels.heavyModel;
+        lightModel = newModels.lightModel;
+        heavyModel = newModels.heavyModel;
+
+        await executeInstruction(currentPrompt, {
+          lightModel: newModels.lightModel,
+          heavyModel: newModels.heavyModel,
+        });
+        return true;
+      } catch (autoHealErr) {
+        console.error(
+          chalk.red.bold(
+            `\n✖ Auto-healing failed: ${autoHealErr instanceof Error ? autoHealErr.message : String(autoHealErr)}\n`,
+          ),
+        );
+        return false;
+      }
+    }
+
+    const rawMsg = err instanceof Error ? err.message : String(err);
+    const isTimeoutOrNetwork =
+      (err as { isTimeout?: boolean })?.isTimeout ||
+      rawMsg.toLowerCase().includes('timeout') ||
+      rawMsg.toLowerCase().includes('network') ||
+      rawMsg.toLowerCase().includes('failed to stream') ||
+      rawMsg.toLowerCase().includes('fetch') ||
+      rawMsg.toLowerCase().includes('econnrefused') ||
+      rawMsg.toLowerCase().includes('etimedout');
+
+    if (isTimeoutOrNetwork) {
+      console.error(
+        chalk.red(
+          `\n✖ Network timeout or API failure. Please check your connection and try again.\n`,
+        ),
+      );
+    } else {
+      console.error(chalk.red(`\n✖ Error: ${rawMsg}\n`));
+    }
+    return false;
+  };
 
   // Execute initial prompt if provided via CLI argument
   if (options.initialPrompt && options.initialPrompt.trim().length > 0) {
@@ -689,13 +825,19 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         await executeInstruction(firstPrompt);
       }
     } catch (err) {
-      console.error(
-        chalk.red.bold(`\n✖ Error: ${err instanceof Error ? err.message : String(err)}\n`),
-      );
+      try {
+        await handleExecutionError(err, firstPrompt);
+      } catch {
+        console.error(
+          chalk.red(
+            '\n✖ Network timeout or API failure. Please check your connection and try again.\n',
+          ),
+        );
+      }
     }
   }
 
-  // Interactive REPL prompt loop
+  // Interactive REPL prompt loop: exact format `[machcode✨] > `
   const promptLabel = `${chalk.cyan.bold('[machcode✨]')} ${chalk.yellow('>')} `;
 
   while (!commandContext.shouldExit) {
@@ -721,13 +863,19 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       continue;
     }
 
-    // Standard prompt instruction execution
+    // Standard prompt instruction execution with silent 410/404 Auto-Healing & Error Boundaries
     try {
       await executeInstruction(trimmed);
     } catch (err) {
-      console.error(
-        chalk.red.bold(`\n✖ Error: ${err instanceof Error ? err.message : String(err)}\n`),
-      );
+      try {
+        await handleExecutionError(err, trimmed);
+      } catch {
+        console.error(
+          chalk.red(
+            '\n✖ Network timeout or API failure. Please check your connection and try again.\n',
+          ),
+        );
+      }
     }
   }
 }
@@ -736,6 +884,7 @@ export * from './config/index.js';
 export * from './prompts/sniper.js';
 export * from './utils/streamParser.js';
 export * from './engine/streamRacer.js';
+export * from './engine/autoRouter.js';
 export * from './engine/executor.js';
 export * from './tools/index.js';
 export * from './tools/nvidiaSkills.js';

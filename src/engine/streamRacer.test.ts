@@ -347,4 +347,38 @@ describe('Streaming Handoff Engine (raceModels)', () => {
     assert.equal(result.winnerModel, HEAVY_MODEL);
     assert.equal(result.parseResult.extractedCode, 'export const heavyRecovery = true;');
   });
+
+  it('strictly aborts and throws Timeout Error when both models fail to respond within timeoutMs', async () => {
+    const mockFetch: typeof fetch = async (_input, init) => {
+      const signal = init?.signal;
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+        });
+      });
+    };
+
+    const startTime = Date.now();
+    await assert.rejects(
+      async () => {
+        await raceModels('Hanging test', LIGHT_MODEL, HEAVY_MODEL, {
+          apiKey: 'nvapi-test-key',
+          timeoutMs: 80,
+          writeToStdout: false,
+          debugLogPath: null,
+          fetchImpl: mockFetch,
+        });
+      },
+      (err: Error) => {
+        const elapsed = Date.now() - startTime;
+        assert.ok(elapsed < 2000, `Expected timeout to resolve promptly, took ${elapsed}ms`);
+        assert.ok(
+          err.message.toLowerCase().includes('timeout') ||
+            err.message.toLowerCase().includes('timed out'),
+          `Expected timeout error message, got: ${err.message}`,
+        );
+        return true;
+      },
+    );
+  });
 });

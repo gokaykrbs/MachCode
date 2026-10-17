@@ -28,6 +28,7 @@ export interface CommandContext {
   tokenStats: TokenStats;
   rl: readline.Interface;
   shouldExit: boolean;
+  sessionId?: string;
   runMachCode: (prompt: string, options?: MachCodeRunOptions) => Promise<MachCodeRunResult>;
 }
 

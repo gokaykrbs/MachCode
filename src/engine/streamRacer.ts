@@ -1,15 +1,17 @@
 import { stdout as output } from 'node:process';
-import { loadConfig } from '../config/index.js';
+import { DEFAULT_API_TIMEOUT_MS, loadConfig } from '../config/index.js';
 import { SNIPER_SYSTEM_PROMPT } from '../prompts/sniper.js';
 import type { OpenAIToolDefinition } from '../tools/index.js';
 import { StreamParser, type StreamParseResult } from '../utils/streamParser.js';
 
 export const DEFAULT_NVIDIA_NIM_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 export const DEFAULT_HANDOFF_WINDOW_MS = 3000;
-export const DEFAULT_LIGHT_MODEL = 'meta/llama-3.3-70b-instruct';
-export const DEFAULT_HEAVY_MODEL = 'qwen/qwen2.5-coder-32b-instruct';
 
 export interface RaceModelsOptions {
+  /**
+   * Timeout in milliseconds for API requests and inactive streams. Defaults to 15000 (15s).
+   */
+  timeoutMs?: number;
   /**
    * NVIDIA NIM API Key. If omitted, read from process.env.NVIDIA_API_KEY or ~/.machcode/config.json.
    */
@@ -167,21 +169,29 @@ async function* streamChatCompletionTokens(params: {
     { role: 'user', content: params.userPrompt },
   ];
 
-  const response = await params.fetchImpl(params.endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${params.apiKey}`,
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
-    body: JSON.stringify({
-      model: params.model,
-      messages: requestMessages,
-      stream: true,
-      temperature: 0.1,
-    }),
-    signal: params.signal,
-  });
+  let response: Response;
+  try {
+    response = await params.fetchImpl(params.endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${params.apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({
+        model: params.model,
+        messages: requestMessages,
+        stream: true,
+        temperature: 0.1,
+      }),
+      signal: params.signal,
+    });
+  } catch (err) {
+    if (params.signal.aborted) {
+      return;
+    }
+    throw err;
+  }
 
   if (!response.ok) {
     let errorBody = '';
@@ -190,9 +200,12 @@ async function* streamChatCompletionTokens(params: {
     } catch {
       // Ignore body read errors
     }
-    throw new Error(
+    const err = new Error(
       `Model "${params.model}" request failed with HTTP ${response.status}: ${errorBody || response.statusText}`,
     );
+    (err as unknown as { status: number }).status = response.status;
+    (err as unknown as { model: string }).model = params.model;
+    throw err;
   }
 
   if (!response.body) {
@@ -205,12 +218,30 @@ async function* streamChatCompletionTokens(params: {
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      if (params.signal.aborted) {
+        return;
+      }
+
+      let done = false;
+      let value: Uint8Array | undefined;
+      try {
+        const result = await reader.read();
+        done = result.done;
+        value = result.value;
+      } catch (readErr) {
+        if (params.signal.aborted) {
+          return;
+        }
+        throw readErr;
+      }
+
       if (done) {
         break;
       }
 
-      sseBuffer += decoder.decode(value, { stream: true });
+      if (value) {
+        sseBuffer += decoder.decode(value, { stream: true });
+      }
       const lines = sseBuffer.split(/\r?\n/);
       sseBuffer = lines.pop() ?? '';
 
@@ -389,9 +420,26 @@ export async function raceModels(
   let handoffWindowWait: Promise<void> | null = null;
   let lightError: unknown = null;
   let heavyError: unknown = null;
+  let lightTimedOut = false;
+  let heavyTimedOut = false;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_API_TIMEOUT_MS;
 
   const consumeLight = async (): Promise<void> => {
     let seenFirstToken = false;
+    let lightTimer: NodeJS.Timeout | null = null;
+
+    const resetLightTimer = () => {
+      if (lightTimer !== null) {
+        clearTimeout(lightTimer);
+      }
+      lightTimer = setTimeout(() => {
+        lightTimedOut = true;
+        abortLight();
+      }, timeoutMs);
+    };
+
+    resetLightTimer();
+
     try {
       const tokenStream = streamChatCompletionTokens({
         endpoint,
@@ -408,6 +456,8 @@ export async function raceModels(
         if (lightAborted || activeWinner === 'heavy') {
           return;
         }
+
+        resetLightTimer();
 
         if (!seenFirstToken) {
           seenFirstToken = true;
@@ -433,11 +483,39 @@ export async function raceModels(
           activeWinner = null;
         }
       }
+    } finally {
+      if (lightTimer !== null) {
+        clearTimeout(lightTimer);
+        lightTimer = null;
+      }
+    }
+
+    if (lightTimedOut) {
+      const err = new Error(
+        `Model "${lightModel}" request timed out after ${timeoutMs / 1000}s without response.`,
+      );
+      (err as unknown as { isTimeout: boolean }).isTimeout = true;
+      (err as unknown as { model: string }).model = lightModel;
+      lightError = err;
     }
   };
 
   const consumeHeavy = async (): Promise<void> => {
     let seenFirstToken = false;
+    let heavyTimer: NodeJS.Timeout | null = null;
+
+    const resetHeavyTimer = () => {
+      if (heavyTimer !== null) {
+        clearTimeout(heavyTimer);
+      }
+      heavyTimer = setTimeout(() => {
+        heavyTimedOut = true;
+        abortHeavy();
+      }, timeoutMs);
+    };
+
+    resetHeavyTimer();
+
     try {
       const tokenStream = streamChatCompletionTokens({
         endpoint,
@@ -454,6 +532,8 @@ export async function raceModels(
         if (heavyAborted) {
           return;
         }
+
+        resetHeavyTimer();
 
         if (!seenFirstToken) {
           seenFirstToken = true;
@@ -504,6 +584,20 @@ export async function raceModels(
           abortHeavy();
         }
       }
+    } finally {
+      if (heavyTimer !== null) {
+        clearTimeout(heavyTimer);
+        heavyTimer = null;
+      }
+    }
+
+    if (heavyTimedOut) {
+      const err = new Error(
+        `Model "${heavyModel}" request timed out after ${timeoutMs / 1000}s without response.`,
+      );
+      (err as unknown as { isTimeout: boolean }).isTimeout = true;
+      (err as unknown as { model: string }).model = heavyModel;
+      heavyError = err;
     }
   };
 
@@ -511,18 +605,42 @@ export async function raceModels(
   const lightPromise = consumeLight();
   const heavyPromise = consumeHeavy();
 
-  await Promise.all([
-    lightPromise.then(async () => {
-      // If Lightweight finished all tokens while the 3-second handoff window is still open,
-      // wait for either the handoff or the 3-second window expiry before finalizing.
-      if (handoffWindowWait && handoffWindowOpen) {
-        await handoffWindowWait;
-      }
-    }),
-    heavyPromise,
-  ]);
+  // Global safety net: guarantee the promise never deadlocks under stalled connections
+  const safetyTimeoutMs = (options.timeoutMs ?? DEFAULT_API_TIMEOUT_MS) + 5000;
+  let safetyTimer: NodeJS.Timeout | null = null;
+  const safetyTimeoutPromise = new Promise<never>((_, reject) => {
+    safetyTimer = setTimeout(() => {
+      abortLight();
+      abortHeavy();
+      const err = new Error(
+        `Racing engine safety timeout exceeded (${safetyTimeoutMs / 1000}s). Both models failed to settle.`,
+      );
+      (err as unknown as { isTimeout: boolean }).isTimeout = true;
+      reject(err);
+    }, safetyTimeoutMs);
+  });
 
-  clearHandoffTimer();
+  try {
+    await Promise.race([
+      Promise.all([
+        lightPromise.then(async () => {
+          // If Lightweight finished all tokens while the 3-second handoff window is still open,
+          // wait for either the handoff or the 3-second window expiry before finalizing.
+          if (handoffWindowWait && handoffWindowOpen) {
+            await handoffWindowWait;
+          }
+        }),
+        heavyPromise,
+      ]),
+      safetyTimeoutPromise,
+    ]);
+  } finally {
+    if (safetyTimer !== null) {
+      clearTimeout(safetyTimer);
+      safetyTimer = null;
+    }
+    clearHandoffTimer();
+  }
 
   if (activeWinner === 'heavy') {
     const parseResult = await heavyParser.finalize();
@@ -557,7 +675,44 @@ export async function raceModels(
     lightError instanceof Error ? lightError.message : String(lightError ?? 'unknown');
   const heavyMsg =
     heavyError instanceof Error ? heavyError.message : String(heavyError ?? 'unknown');
-  throw new Error(
-    `Both models failed to stream responses. Light (${lightModel}): ${lightMsg} | Heavy (${heavyModel}): ${heavyMsg}`,
-  );
+
+  const isLightTimeout =
+    (lightError as { isTimeout?: boolean })?.isTimeout || lightMsg.toLowerCase().includes('time');
+  const isHeavyTimeout =
+    (heavyError as { isTimeout?: boolean })?.isTimeout || heavyMsg.toLowerCase().includes('time');
+
+  let combinedError: Error;
+  if (isLightTimeout && isHeavyTimeout) {
+    combinedError = new Error(
+      `Network timeout: Both models (${lightModel} & ${heavyModel}) failed to respond within ${(options.timeoutMs ?? DEFAULT_API_TIMEOUT_MS) / 1000}s.`,
+    );
+    (combinedError as unknown as { isTimeout: boolean }).isTimeout = true;
+  } else {
+    combinedError = new Error(
+      `Both models failed to stream responses. Light (${lightModel}): ${lightMsg} | Heavy (${heavyModel}): ${heavyMsg}`,
+    );
+    if (isLightTimeout || isHeavyTimeout) {
+      (combinedError as unknown as { isTimeout: boolean }).isTimeout = true;
+    }
+  }
+
+  const lightStatus = (lightError as { status?: number })?.status;
+  const heavyStatus = (heavyError as { status?: number })?.status;
+  if (
+    lightStatus === 410 ||
+    heavyStatus === 410 ||
+    lightMsg.includes('410') ||
+    heavyMsg.includes('410')
+  ) {
+    (combinedError as unknown as { status: number }).status = 410;
+  } else if (
+    lightStatus === 404 ||
+    heavyStatus === 404 ||
+    lightMsg.includes('404') ||
+    heavyMsg.includes('404')
+  ) {
+    (combinedError as unknown as { status: number }).status = 404;
+  }
+
+  throw combinedError;
 }
