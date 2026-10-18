@@ -28,7 +28,7 @@ export interface NvidiaModelsResponse {
 const CONFIG_DIR_NAME = '.machcode';
 const CONFIG_FILE_NAME = 'config.json';
 export const DEFAULT_NVIDIA_MODELS_ENDPOINT = 'https://integrate.api.nvidia.com/v1/models';
-export const DEFAULT_API_TIMEOUT_MS = 15000;
+export const DEFAULT_API_TIMEOUT_MS = 10000;
 
 /**
  * Returns the absolute path to the ~/.machcode directory.

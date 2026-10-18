@@ -40,8 +40,12 @@ describe('End-to-End CLI Execution Flow (runMachCode)', () => {
         callCount += 1;
         const encoder = new TextEncoder();
 
-        // Round 1 (calls 1 & 2 for light + heavy): Light triggers QUESTION:
-        const isFirstRound = callCount <= 2;
+        // Round 1: triggers QUESTION: until answer is provided in context
+        const isFirstRound = !body.messages.some(
+          (m) =>
+            m.content.includes('password length >= 8') ||
+            m.content.includes('Additional User Context'),
+        );
 
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {
@@ -131,10 +135,10 @@ describe('Interactive REPL Mode (startRepl)', () => {
         sentBodies.push(body);
 
         const encoder = new TextEncoder();
-        const content =
-          sentBodies.length <= 2
-            ? '```tsx\n// file: components/Login.tsx\nexport function Button() { return <button className="blue">Click</button>; }\n```'
-            : '```tsx\n// file: components/Login.tsx\nexport function Button() { return <button className="green">Click</button>; }\n```';
+        const isFirstTurn = !body.messages.some((m) => m.content.includes('green'));
+        const content = isFirstTurn
+          ? '```tsx\n// file: components/Login.tsx\nexport function Button() { return <button className="blue">Click</button>; }\n```'
+          : '```tsx\n// file: components/Login.tsx\nexport function Button() { return <button className="green">Click</button>; }\n```';
 
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {

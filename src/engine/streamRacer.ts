@@ -1,101 +1,47 @@
+import fs from 'node:fs/promises';
 import { stdout as output } from 'node:process';
-import { DEFAULT_API_TIMEOUT_MS, loadConfig } from '../config/index.js';
-import { SNIPER_SYSTEM_PROMPT } from '../prompts/sniper.js';
-import type { OpenAIToolDefinition } from '../tools/index.js';
+import chalk from 'chalk';
+import { loadConfig, DEFAULT_API_TIMEOUT_MS } from '../config/index.js';
+import { buildSniperSystemPrompt } from '../prompts/sniper.js';
 import { StreamParser, type StreamParseResult } from '../utils/streamParser.js';
+import type { OpenAIToolDefinition } from '../tools/index.js';
 
-export const DEFAULT_NVIDIA_NIM_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 export const DEFAULT_HANDOFF_WINDOW_MS = 3000;
-
-export interface RaceModelsOptions {
-  /**
-   * Timeout in milliseconds for API requests and inactive streams. Defaults to 15000 (15s).
-   */
-  timeoutMs?: number;
-  /**
-   * NVIDIA NIM API Key. If omitted, read from process.env.NVIDIA_API_KEY or ~/.machcode/config.json.
-   */
-  apiKey?: string;
-  /**
-   * OpenAI-compatible base URL. Defaults to https://integrate.api.nvidia.com/v1.
-   */
-  baseUrl?: string;
-  /**
-   * System prompt sent to both models. Defaults to SNIPER_SYSTEM_PROMPT.
-   */
-  systemPrompt?: string;
-  /**
-   * OpenAI Tool Calling definitions (local FS tools + NVIDIA official skills) available to the engine.
-   */
-  tools?: OpenAIToolDefinition[];
-  /**
-   * Handoff window in milliseconds after the Lightweight model outputs its first token.
-   * Defaults to 3000 (3 seconds).
-   */
-  handoffWindowMs?: number;
-  /**
-   * Whether to write visible stream output directly to process.stdout. Defaults to true.
-   */
-  writeToStdout?: boolean;
-  /**
-   * Optional path for the <plan> debug log file. Set to null to disable disk logging.
-   */
-  debugLogPath?: string | null;
-  /**
-   * Optional custom fetch implementation (used for mock testing). Defaults to global fetch.
-   */
-  fetchImpl?: typeof fetch;
-  /**
-   * Invoked when either model produces its first content token while active.
-   */
-  onFirstToken?: (model: string, role: 'light' | 'heavy') => void;
-  /**
-   * Invoked when the Heavyweight model starts within the handoff window and takes over.
-   */
-  onHandoff?: (details: {
-    fromModel: string;
-    toModel: string;
-    elapsedMs: number;
-    clearedTerminalOutput: string;
-  }) => void;
-  /**
-   * Invoked when the Heavyweight model fails to start within the 3-second window and is aborted.
-   */
-  onHandoffWindowExpired?: (details: {
-    winnerModel: string;
-    abortedModel: string;
-    windowMs: number;
-  }) => void;
-  /**
-   * Invoked for each visible terminal chunk emitted by the active model's StreamParser.
-   */
-  onTerminalChunk?: (chunk: string, model: string, role: 'light' | 'heavy') => void;
-  /**
-   * Invoked when the terminal output from the Lightweight model is cleared during a handoff.
-   */
-  onTerminalClear?: (clearedOutput: string) => void;
-  /**
-   * Custom QUESTION handler passed to StreamParser.
-   */
-  onQuestion?: (question: string) => Promise<string | void> | string | void;
-  /**
-   * Whether StreamParser should interactively prompt on QUESTION.
-   */
-  promptOnQuestion?: boolean;
-  /**
-   * Prior conversation messages for multi-turn session context retention.
-   */
-  messages?: ChatMessage[];
-}
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
-export interface RaceModelsResult {
+export interface TieredFallbackOptions {
+  apiKey?: string;
+  systemPrompt?: string;
+  tools?: OpenAIToolDefinition[];
+  timeoutMs?: number;
+  writeToStdout?: boolean;
+  debugLogPath?: string | null;
+  fetchImpl?: typeof fetch;
+  promptOnQuestion?: boolean;
+  onQuestion?: (question: string) => Promise<string | void> | string | void;
+  onFirstToken?: (model: string, tier: 'strong' | 'weak') => void;
+  onFallback?: (fromTier: 'strong', toTier: 'weak', reason: string) => void;
+  onTerminalChunk?: (chunk: string, model: string, tier: string) => void;
+  onTerminalClear?: (clearedText: string) => void;
+  messages?: ChatMessage[];
+  strongPool?: string[];
+  weakPool?: string[];
+  // Backwards compatibility for existing callers/tests:
+  handoffWindowMs?: number;
+  onHandoff?: (details: any) => void;
+  onHandoffWindowExpired?: (details: any) => void;
+}
+
+export type RaceModelsOptions = TieredFallbackOptions;
+
+export interface TieredFallbackResult {
   winnerModel: string;
-  winnerRole: 'light' | 'heavy';
+  winnerRole: 'strong' | 'weak' | 'heavy' | 'light';
+  winnerTier?: 'strong' | 'weak';
   handoffOccurred: boolean;
   handoffElapsedMs: number | null;
   lightAborted: boolean;
@@ -104,32 +50,7 @@ export interface RaceModelsResult {
   finalTerminalOutput: string;
 }
 
-interface ChatCompletionDeltaChunk {
-  choices?: Array<{
-    delta?: {
-      content?: string | null;
-    };
-  }>;
-}
-
-/**
- * Clears previously printed multi-line output from the terminal using ANSI escape sequences.
- */
-export function clearTerminalBlock(printedText: string, writeToStdout: boolean): void {
-  if (!writeToStdout || printedText.length === 0) {
-    return;
-  }
-
-  const lines = printedText.split('\n');
-  const lineMoves = lines.length - 1;
-
-  // Clear current line
-  output.write('\r\x1b[2K');
-  // Move cursor up and clear each preceding line
-  for (let i = 0; i < lineMoves; i++) {
-    output.write('\x1b[1A\r\x1b[2K');
-  }
-}
+export type RaceModelsResult = TieredFallbackResult;
 
 /**
  * Resolves the NVIDIA API key from options, environment, or ~/.machcode/config.json.
@@ -151,7 +72,8 @@ async function resolveApiKey(explicitKey?: string): Promise<string> {
 }
 
 /**
- * Streams content tokens from an OpenAI-compatible `/v1/chat/completions` SSE endpoint.
+ * Streams content tokens from an OpenAI-compatible /v1/chat/completions SSE endpoint.
+ * Enforces a strict 10s start timeout via AbortController.
  */
 async function* streamChatCompletionTokens(params: {
   endpoint: string;
@@ -162,12 +84,42 @@ async function* streamChatCompletionTokens(params: {
   messages?: ChatMessage[];
   signal: AbortSignal;
   fetchImpl: typeof fetch;
+  timeoutMs?: number;
 }): AsyncGenerator<string, void, unknown> {
   const requestMessages: ChatMessage[] = [
     { role: 'system', content: params.systemPrompt },
     ...(params.messages ?? []),
     { role: 'user', content: params.userPrompt },
   ];
+
+  const fetchTimeoutMs = params.timeoutMs ?? DEFAULT_API_TIMEOUT_MS;
+  const fetchController = new AbortController();
+
+  let isTimedOut = false;
+  let streamStarted = false;
+
+  const onExternalAbort = () => {
+    fetchController.abort(params.signal.reason);
+  };
+
+  if (params.signal.aborted) {
+    return;
+  }
+  params.signal.addEventListener('abort', onExternalAbort, { once: true });
+
+  const timeoutTimer = setTimeout(() => {
+    if (!streamStarted) {
+      isTimedOut = true;
+      const timeoutErr = new Error('❌ API Timeout: No response in 10s');
+      (timeoutErr as unknown as { isTimeout: boolean }).isTimeout = true;
+      (timeoutErr as unknown as { model: string }).model = params.model;
+      fetchController.abort(timeoutErr);
+    }
+  }, fetchTimeoutMs);
+
+  const clearTimer = () => {
+    clearTimeout(timeoutTimer);
+  };
 
   let response: Response;
   try {
@@ -184,16 +136,28 @@ async function* streamChatCompletionTokens(params: {
         stream: true,
         temperature: 0.1,
       }),
-      signal: params.signal,
+      signal: fetchController.signal,
     });
   } catch (err) {
-    if (params.signal.aborted) {
+    clearTimer();
+    params.signal.removeEventListener('abort', onExternalAbort);
+
+    if (isTimedOut) {
+      const timeoutErr = new Error('❌ API Timeout: No response in 10s');
+      (timeoutErr as unknown as { isTimeout: boolean }).isTimeout = true;
+      (timeoutErr as unknown as { model: string }).model = params.model;
+      throw timeoutErr;
+    }
+
+    if (params.signal.aborted || fetchController.signal.aborted) {
       return;
     }
     throw err;
   }
 
   if (!response.ok) {
+    clearTimer();
+    params.signal.removeEventListener('abort', onExternalAbort);
     let errorBody = '';
     try {
       errorBody = await response.text();
@@ -209,16 +173,34 @@ async function* streamChatCompletionTokens(params: {
   }
 
   if (!response.body) {
+    clearTimer();
+    params.signal.removeEventListener('abort', onExternalAbort);
     throw new Error(`Model "${params.model}" returned an empty response body.`);
   }
 
   const reader = response.body.getReader();
+  const cancelReader = () => {
+    try {
+      reader.cancel().catch(() => {});
+    } catch {
+      // Ignore
+    }
+  };
+  params.signal.addEventListener('abort', cancelReader, { once: true });
+  fetchController.signal.addEventListener('abort', cancelReader, { once: true });
+
   const decoder = new TextDecoder('utf-8');
   let sseBuffer = '';
 
   try {
     while (true) {
-      if (params.signal.aborted) {
+      if (params.signal.aborted || fetchController.signal.aborted) {
+        if (isTimedOut) {
+          const timeoutErr = new Error('❌ API Timeout: No response in 10s');
+          (timeoutErr as unknown as { isTimeout: boolean }).isTimeout = true;
+          (timeoutErr as unknown as { model: string }).model = params.model;
+          throw timeoutErr;
+        }
         return;
       }
 
@@ -229,7 +211,13 @@ async function* streamChatCompletionTokens(params: {
         done = result.done;
         value = result.value;
       } catch (readErr) {
-        if (params.signal.aborted) {
+        if (isTimedOut) {
+          const timeoutErr = new Error('❌ API Timeout: No response in 10s');
+          (timeoutErr as unknown as { isTimeout: boolean }).isTimeout = true;
+          (timeoutErr as unknown as { model: string }).model = params.model;
+          throw timeoutErr;
+        }
+        if (params.signal.aborted || fetchController.signal.aborted) {
           return;
         }
         throw readErr;
@@ -257,462 +245,303 @@ async function* streamChatCompletionTokens(params: {
         }
 
         try {
-          const parsed = JSON.parse(payload) as ChatCompletionDeltaChunk;
-          const content = parsed.choices?.[0]?.delta?.content;
+          const parsed = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string | null; reasoning_content?: string | null } }>;
+          };
+          const delta = parsed.choices?.[0]?.delta;
+          const content = delta?.content ?? delta?.reasoning_content;
           if (typeof content === 'string' && content.length > 0) {
+            if (!streamStarted) {
+              streamStarted = true;
+              clearTimer();
+            }
             yield content;
           }
         } catch {
-          // Ignore malformed keep-alive or non-JSON comments
+          // Ignore malformed keep-alive comments
         }
       }
     }
   } finally {
-    try {
-      reader.releaseLock();
-    } catch {
-      // Ignore releaseLock errors on aborted streams
-    }
+    clearTimer();
+    params.signal.removeEventListener('abort', onExternalAbort);
+    params.signal.removeEventListener('abort', cancelReader);
+    fetchController.signal.removeEventListener('abort', cancelReader);
   }
 }
 
-/**
- * Checks whether an error was caused by an intentional AbortController.abort() call.
- */
-function isAbortError(error: unknown, signal: AbortSignal): boolean {
-  if (signal.aborted) {
-    return true;
-  }
-  if (error instanceof Error) {
-    return error.name === 'AbortError' || error.message.toLowerCase().includes('abort');
-  }
-  return false;
+interface TierExecutionResult {
+  winnerModel: string;
+  firstToken: string;
+  tokenStream: AsyncGenerator<string, void, unknown>;
+  winnerTier: 'strong' | 'weak';
 }
 
 /**
- * Streaming Handoff Racing Engine (`raceModels`).
- *
- * Simultaneously launches streaming requests to `lightModel` and `heavyModel` on NVIDIA NIM:
- * - Whichever model emits the first token starts streaming through `StreamParser` to the terminal.
- * - If `lightModel` starts first, a 3-second handoff window opens:
- *   - If `heavyModel` emits its first token within 3 seconds of `lightModel`'s first token,
- *     `lightModel` is IMMEDIATELY aborted, its terminal output is cleared/overwritten, and
- *     `heavyModel`'s stream is processed and displayed seamlessly from the beginning.
- *   - If `heavyModel` does not emit a token within 3 seconds, `heavyModel` is IMMEDIATELY aborted
- *     and `lightModel` continues to completion.
+ * Fires requests in parallel to all models in a tier.
+ * Returns the first model that successfully connects (200 OK) and yields its first token,
+ * immediately aborting all other competing requests in the tier.
  */
-export async function raceModels(
-  prompt: string,
-  lightModel: string,
-  heavyModel: string,
-  options: RaceModelsOptions = {},
-): Promise<RaceModelsResult> {
-  const apiKey = await resolveApiKey(options.apiKey);
-  const baseUrl = (options.baseUrl ?? DEFAULT_NVIDIA_NIM_BASE_URL).replace(/\/+$/, '');
-  const endpoint = `${baseUrl}/chat/completions`;
-  const systemPrompt = options.systemPrompt ?? SNIPER_SYSTEM_PROMPT;
-  const handoffWindowMs = options.handoffWindowMs ?? DEFAULT_HANDOFF_WINDOW_MS;
-  const writeToStdout = options.writeToStdout ?? true;
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+async function executeTier(
+  models: string[],
+  tier: 'strong' | 'weak',
+  params: {
+    endpoint: string;
+    apiKey: string;
+    systemPrompt: string;
+    userPrompt: string;
+    messages?: ChatMessage[];
+    fetchImpl: typeof fetch;
+    timeoutMs: number;
+    parentSignal?: AbortSignal;
+  },
+): Promise<TierExecutionResult> {
+  const uniqueModels = Array.from(new Set(models)).filter(Boolean);
+  if (uniqueModels.length === 0) {
+    throw new Error(`No models available for tier: ${tier}`);
+  }
 
-  const lightController = new AbortController();
-  const heavyController = new AbortController();
+  const controllers = new Map<string, AbortController>();
+  const errorMap = new Map<string, unknown>();
 
-  let lightAborted = false;
-  let heavyAborted = false;
-  let handoffOccurred = false;
-  let handoffElapsedMs: number | null = null;
+  return new Promise<TierExecutionResult>((resolve, reject) => {
+    let resolved = false;
+    let pendingCount = uniqueModels.length;
 
-  let activeWinner: 'light' | 'heavy' | null = null;
-  let lightFirstTokenTime: number | null = null;
-  let handoffWindowOpen = false;
-  let handoffTimer: ReturnType<typeof setTimeout> | null = null;
-  let handoffWindowPromiseResolve: (() => void) | null = null;
-
-  let lightTerminalOutput = '';
-  let heavyTerminalOutput = '';
-
-  const lightParser = new StreamParser({
-    debugLogPath: options.debugLogPath,
-    writeToStdout: false,
-    onQuestion: options.onQuestion,
-    promptOnQuestion: options.promptOnQuestion,
-    onTerminalChunk: (chunk) => {
-      if (activeWinner !== 'light' || lightAborted) {
-        return;
-      }
-      lightTerminalOutput += chunk;
-      if (writeToStdout) {
-        output.write(chunk);
-      }
-      options.onTerminalChunk?.(chunk, lightModel, 'light');
-    },
-  });
-
-  const heavyParser = new StreamParser({
-    debugLogPath: options.debugLogPath,
-    writeToStdout: false,
-    onQuestion: options.onQuestion,
-    promptOnQuestion: options.promptOnQuestion,
-    onTerminalChunk: (chunk) => {
-      if (activeWinner !== 'heavy' || heavyAborted) {
-        return;
-      }
-      heavyTerminalOutput += chunk;
-      if (writeToStdout) {
-        output.write(chunk);
-      }
-      options.onTerminalChunk?.(chunk, heavyModel, 'heavy');
-    },
-  });
-
-  const clearHandoffTimer = (): void => {
-    if (handoffTimer !== null) {
-      clearTimeout(handoffTimer);
-      handoffTimer = null;
-    }
-    handoffWindowOpen = false;
-    if (handoffWindowPromiseResolve) {
-      const resolve = handoffWindowPromiseResolve;
-      handoffWindowPromiseResolve = null;
-      resolve();
-    }
-  };
-
-  const abortLight = (): void => {
-    if (!lightAborted) {
-      lightAborted = true;
-      lightController.abort();
-    }
-  };
-
-  const abortHeavy = (): void => {
-    if (!heavyAborted) {
-      heavyAborted = true;
-      heavyController.abort();
-    }
-  };
-
-  const startHandoffTimer = (): Promise<void> => {
-    handoffWindowOpen = true;
-    return new Promise<void>((resolve) => {
-      handoffWindowPromiseResolve = resolve;
-      handoffTimer = setTimeout(() => {
-        handoffTimer = null;
-        if (handoffWindowOpen && activeWinner === 'light') {
-          handoffWindowOpen = false;
-          abortHeavy();
-          options.onHandoffWindowExpired?.({
-            winnerModel: lightModel,
-            abortedModel: heavyModel,
-            windowMs: handoffWindowMs,
-          });
-        }
-        if (handoffWindowPromiseResolve) {
-          const done = handoffWindowPromiseResolve;
-          handoffWindowPromiseResolve = null;
-          done();
-        }
-      }, handoffWindowMs);
-    });
-  };
-
-  let handoffWindowWait: Promise<void> | null = null;
-  let lightError: unknown = null;
-  let heavyError: unknown = null;
-  let lightTimedOut = false;
-  let heavyTimedOut = false;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_API_TIMEOUT_MS;
-
-  const consumeLight = async (): Promise<void> => {
-    let seenFirstToken = false;
-    let lightTimer: NodeJS.Timeout | null = null;
-
-    const resetLightTimer = () => {
-      if (lightTimer !== null) {
-        clearTimeout(lightTimer);
-      }
-      lightTimer = setTimeout(() => {
-        lightTimedOut = true;
-        abortLight();
-      }, timeoutMs);
-    };
-
-    resetLightTimer();
-
-    try {
-      const tokenStream = streamChatCompletionTokens({
-        endpoint,
-        apiKey,
-        model: lightModel,
-        systemPrompt,
-        userPrompt: prompt,
-        messages: options.messages,
-        signal: lightController.signal,
-        fetchImpl,
-      });
-
-      for await (const token of tokenStream) {
-        if (lightAborted || activeWinner === 'heavy') {
-          return;
-        }
-
-        resetLightTimer();
-
-        if (!seenFirstToken) {
-          seenFirstToken = true;
-          lightFirstTokenTime = Date.now();
-          activeWinner = 'light';
-          options.onFirstToken?.(lightModel, 'light');
-          handoffWindowWait = startHandoffTimer();
-        }
-
-        lightParser.feed(token);
-      }
-    } catch (err) {
-      if (!isAbortError(err, lightController.signal)) {
-        lightError = err;
-        // If Lightweight errored while waiting for Heavyweight, close the timer and let Heavyweight run
-        if (handoffWindowOpen && !heavyAborted) {
-          clearHandoffTimer();
-          if (lightTerminalOutput.length > 0) {
-            clearTerminalBlock(lightTerminalOutput, writeToStdout);
-            options.onTerminalClear?.(lightTerminalOutput);
-            lightTerminalOutput = '';
+    const abortOthers = (winner: string) => {
+      for (const [model, controller] of controllers) {
+        if (model !== winner) {
+          try {
+            controller.abort();
+          } catch {
+            // Ignore
           }
-          activeWinner = null;
         }
       }
-    } finally {
-      if (lightTimer !== null) {
-        clearTimeout(lightTimer);
-        lightTimer = null;
-      }
-    }
-
-    if (lightTimedOut) {
-      const err = new Error(
-        `Model "${lightModel}" request timed out after ${timeoutMs / 1000}s without response.`,
-      );
-      (err as unknown as { isTimeout: boolean }).isTimeout = true;
-      (err as unknown as { model: string }).model = lightModel;
-      lightError = err;
-    }
-  };
-
-  const consumeHeavy = async (): Promise<void> => {
-    let seenFirstToken = false;
-    let heavyTimer: NodeJS.Timeout | null = null;
-
-    const resetHeavyTimer = () => {
-      if (heavyTimer !== null) {
-        clearTimeout(heavyTimer);
-      }
-      heavyTimer = setTimeout(() => {
-        heavyTimedOut = true;
-        abortHeavy();
-      }, timeoutMs);
     };
 
-    resetHeavyTimer();
-
-    try {
-      const tokenStream = streamChatCompletionTokens({
-        endpoint,
-        apiKey,
-        model: heavyModel,
-        systemPrompt,
-        userPrompt: prompt,
-        messages: options.messages,
-        signal: heavyController.signal,
-        fetchImpl,
-      });
-
-      for await (const token of tokenStream) {
-        if (heavyAborted) {
-          return;
+    const checkAllFailed = () => {
+      if (!resolved && pendingCount === 0) {
+        const errorMessages = Array.from(errorMap.entries()).map(
+          ([m, err]) => `${m}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        const combined = new Error(
+          `All models in ${tier} tier failed. Details: ${errorMessages.join(' | ')}`,
+        );
+        (combined as unknown as { tier: string; errors: Map<string, unknown> }).tier = tier;
+        (combined as unknown as { errors: Map<string, unknown> }).errors = errorMap;
+        // Check if any error was a timeout
+        const hadTimeout = Array.from(errorMap.values()).some(
+          (e) => (e as { isTimeout?: boolean })?.isTimeout || (e instanceof Error && e.message.includes('10s')),
+        );
+        if (hadTimeout) {
+          (combined as unknown as { isTimeout: boolean }).isTimeout = true;
         }
+        reject(combined);
+      }
+    };
 
-        resetHeavyTimer();
+    for (const model of uniqueModels) {
+      const controller = new AbortController();
+      controllers.set(model, controller);
 
-        if (!seenFirstToken) {
-          seenFirstToken = true;
+      const onParentAbort = () => {
+        controller.abort(params.parentSignal?.reason);
+      };
+      params.parentSignal?.addEventListener('abort', onParentAbort, { once: true });
 
-          if (activeWinner === null) {
-            // Heavyweight beat Lightweight to the very first token
-            activeWinner = 'heavy';
-            abortLight();
-            options.onFirstToken?.(heavyModel, 'heavy');
-          } else if (activeWinner === 'light' && handoffWindowOpen) {
-            // THE HANDOFF: Heavyweight started within the 3-second window after Lightweight!
-            const elapsed = lightFirstTokenTime !== null ? Date.now() - lightFirstTokenTime : 0;
-            clearHandoffTimer();
-            abortLight();
+      (async () => {
+        try {
+          const stream = streamChatCompletionTokens({
+            endpoint: params.endpoint,
+            apiKey: params.apiKey,
+            model,
+            systemPrompt: params.systemPrompt,
+            userPrompt: params.userPrompt,
+            messages: params.messages,
+            signal: controller.signal,
+            fetchImpl: params.fetchImpl,
+            timeoutMs: params.timeoutMs,
+          });
 
-            handoffOccurred = true;
-            handoffElapsedMs = elapsed;
-            activeWinner = 'heavy';
+          // Wait strictly for the first token of actual content
+          const firstIteration = await stream.next();
 
-            const clearedText = lightTerminalOutput;
-            clearTerminalBlock(clearedText, writeToStdout);
-            lightTerminalOutput = '';
-            options.onTerminalClear?.(clearedText);
-            options.onHandoff?.({
-              fromModel: lightModel,
-              toModel: heavyModel,
-              elapsedMs: elapsed,
-              clearedTerminalOutput: clearedText,
-            });
-            options.onFirstToken?.(heavyModel, 'heavy');
-          } else {
-            // Handoff window already expired; abort Heavyweight
-            abortHeavy();
+          if (firstIteration.done || typeof firstIteration.value !== 'string') {
+            throw new Error(`Model "${model}" completed without emitting any tokens.`);
+          }
+
+          if (resolved) {
+            controller.abort();
             return;
           }
-        }
 
-        if (activeWinner === 'heavy') {
-          heavyParser.feed(token);
+          resolved = true;
+          abortOthers(model);
+
+          resolve({
+            winnerModel: model,
+            firstToken: firstIteration.value,
+            tokenStream: stream,
+            winnerTier: tier,
+          });
+        } catch (err) {
+          errorMap.set(model, err);
+          pendingCount--;
+          checkAllFailed();
         }
-      }
-    } catch (err) {
-      if (!isAbortError(err, heavyController.signal)) {
-        heavyError = err;
-        // If Heavyweight failed during the handoff window, close the window immediately and stick with Lightweight
-        if (handoffWindowOpen && activeWinner === 'light') {
-          clearHandoffTimer();
-          abortHeavy();
-        }
-      }
-    } finally {
-      if (heavyTimer !== null) {
-        clearTimeout(heavyTimer);
-        heavyTimer = null;
-      }
+      })();
     }
+  });
+}
 
-    if (heavyTimedOut) {
-      const err = new Error(
-        `Model "${heavyModel}" request timed out after ${timeoutMs / 1000}s without response.`,
-      );
-      (err as unknown as { isTimeout: boolean }).isTimeout = true;
-      (err as unknown as { model: string }).model = heavyModel;
-      heavyError = err;
-    }
-  };
+/**
+ * Simple Tiered Priority Fallback Engine.
+ * 
+ * 1. Primary: Fires requests to the StrongPool.
+ * 2. If ANY strong model successfully returns 200 OK and starts streaming,
+ *    instantly locks onto it, streams it to the UI, and aborts all other requests.
+ * 3. Fallback: IF AND ONLY IF all models in the StrongPool fail, timeout, or return errors,
+ *    THEN immediately fires requests to the WeakPool to guarantee the user gets a response.
+ * 4. Clean UI: Only starts rendering stream chunks to the terminal ONCE a model has successfully connected.
+ */
+export async function tieredFallback(
+  prompt: string,
+  lightModelOrWeakPool?: string | string[],
+  heavyModelOrStrongPool?: string | string[],
+  options: TieredFallbackOptions = {},
+): Promise<TieredFallbackResult> {
+  const apiKey = await resolveApiKey(options.apiKey);
+  const endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_API_TIMEOUT_MS;
+  const writeToStdout = options.writeToStdout ?? true;
 
-  // Start both streams simultaneously
-  const lightPromise = consumeLight();
-  const heavyPromise = consumeHeavy();
+  // Resolve StrongPool and WeakPool
+  const strongPool: string[] = options.strongPool ??
+    (Array.isArray(heavyModelOrStrongPool)
+      ? heavyModelOrStrongPool
+      : typeof heavyModelOrStrongPool === 'string' && heavyModelOrStrongPool.trim().length > 0
+        ? [heavyModelOrStrongPool.trim()]
+        : ['nvidia/nemotron-3-nano-omni-30b-a3b-reasoning']);
 
-  // Global safety net: guarantee the promise never deadlocks under stalled connections
-  const safetyTimeoutMs = (options.timeoutMs ?? DEFAULT_API_TIMEOUT_MS) + 5000;
-  let safetyTimer: NodeJS.Timeout | null = null;
-  const safetyTimeoutPromise = new Promise<never>((_, reject) => {
-    safetyTimer = setTimeout(() => {
-      abortLight();
-      abortHeavy();
-      const err = new Error(
-        `Racing engine safety timeout exceeded (${safetyTimeoutMs / 1000}s). Both models failed to settle.`,
-      );
-      (err as unknown as { isTimeout: boolean }).isTimeout = true;
-      reject(err);
-    }, safetyTimeoutMs);
+  const weakPool: string[] = options.weakPool ??
+    (Array.isArray(lightModelOrWeakPool)
+      ? lightModelOrWeakPool
+      : typeof lightModelOrWeakPool === 'string' && lightModelOrWeakPool.trim().length > 0
+        ? [lightModelOrWeakPool.trim()]
+        : ['meta/llama-3.2-11b-vision-instruct']);
+
+  const systemPrompt = options.systemPrompt ?? buildSniperSystemPrompt();
+
+  let finalTerminalOutput = '';
+
+  const parser = new StreamParser({
+    debugLogPath: options.debugLogPath,
+    writeToStdout: false,
+    onQuestion: options.onQuestion,
+    promptOnQuestion: options.promptOnQuestion,
+    onTerminalChunk: (chunk) => {
+      finalTerminalOutput += chunk;
+      if (writeToStdout) {
+        output.write(chunk);
+      }
+      options.onTerminalChunk?.(chunk, activeModel, activeTier);
+    },
   });
 
+  let activeModel = '';
+  let activeTier: 'strong' | 'weak' = 'strong';
+
+  let winnerExecution: TierExecutionResult | null = null;
+  let strongError: unknown = null;
+
+  // Step 1 & 2: Primary — Fire to StrongPool
   try {
-    await Promise.race([
-      Promise.all([
-        lightPromise.then(async () => {
-          // If Lightweight finished all tokens while the 3-second handoff window is still open,
-          // wait for either the handoff or the 3-second window expiry before finalizing.
-          if (handoffWindowWait && handoffWindowOpen) {
-            await handoffWindowWait;
-          }
-        }),
-        heavyPromise,
-      ]),
-      safetyTimeoutPromise,
-    ]);
-  } finally {
-    if (safetyTimer !== null) {
-      clearTimeout(safetyTimer);
-      safetyTimer = null;
-    }
-    clearHandoffTimer();
+    winnerExecution = await executeTier(strongPool, 'strong', {
+      endpoint,
+      apiKey,
+      systemPrompt,
+      userPrompt: prompt,
+      messages: options.messages,
+      fetchImpl,
+      timeoutMs,
+    });
+  } catch (err) {
+    strongError = err;
   }
 
-  if (activeWinner === 'heavy') {
-    const parseResult = await heavyParser.finalize();
-    return {
-      winnerModel: heavyModel,
-      winnerRole: 'heavy',
-      handoffOccurred,
-      handoffElapsedMs,
-      lightAborted,
-      heavyAborted,
-      parseResult,
-      finalTerminalOutput: heavyTerminalOutput,
-    };
-  }
+  // Step 3: Fallback — IF AND ONLY IF all models in StrongPool fail, fire to WeakPool
+  if (!winnerExecution) {
+    const fallbackReason = strongError instanceof Error ? strongError.message : String(strongError);
+    options.onFallback?.('strong', 'weak', fallbackReason);
 
-  if (activeWinner === 'light') {
-    const parseResult = await lightParser.finalize();
-    return {
-      winnerModel: lightModel,
-      winnerRole: 'light',
-      handoffOccurred: false,
-      handoffElapsedMs: null,
-      lightAborted,
-      heavyAborted,
-      parseResult,
-      finalTerminalOutput: lightTerminalOutput,
-    };
-  }
+    try {
+      winnerExecution = await executeTier(weakPool, 'weak', {
+        endpoint,
+        apiKey,
+        systemPrompt,
+        userPrompt: prompt,
+        messages: options.messages,
+        fetchImpl,
+        timeoutMs,
+      });
+    } catch (weakError) {
+      const isTimeout =
+        (strongError as { isTimeout?: boolean })?.isTimeout ||
+        (weakError as { isTimeout?: boolean })?.isTimeout ||
+        fallbackReason.includes('10s') ||
+        (weakError instanceof Error && weakError.message.includes('10s'));
 
-  // Neither model succeeded
-  const lightMsg =
-    lightError instanceof Error ? lightError.message : String(lightError ?? 'unknown');
-  const heavyMsg =
-    heavyError instanceof Error ? heavyError.message : String(heavyError ?? 'unknown');
+      if (isTimeout) {
+        const timeoutErr = new Error('❌ API Timeout: No response in 10s');
+        (timeoutErr as unknown as { isTimeout: boolean }).isTimeout = true;
+        throw timeoutErr;
+      }
 
-  const isLightTimeout =
-    (lightError as { isTimeout?: boolean })?.isTimeout || lightMsg.toLowerCase().includes('time');
-  const isHeavyTimeout =
-    (heavyError as { isTimeout?: boolean })?.isTimeout || heavyMsg.toLowerCase().includes('time');
-
-  let combinedError: Error;
-  if (isLightTimeout && isHeavyTimeout) {
-    combinedError = new Error(
-      `Network timeout: Both models (${lightModel} & ${heavyModel}) failed to respond within ${(options.timeoutMs ?? DEFAULT_API_TIMEOUT_MS) / 1000}s.`,
-    );
-    (combinedError as unknown as { isTimeout: boolean }).isTimeout = true;
-  } else {
-    combinedError = new Error(
-      `Both models failed to stream responses. Light (${lightModel}): ${lightMsg} | Heavy (${heavyModel}): ${heavyMsg}`,
-    );
-    if (isLightTimeout || isHeavyTimeout) {
-      (combinedError as unknown as { isTimeout: boolean }).isTimeout = true;
+      const strongMsg = strongError instanceof Error ? strongError.message : String(strongError);
+      const weakMsg = weakError instanceof Error ? weakError.message : String(weakError);
+      throw new Error(`Both Strong and Fallback tiers failed. Strong: ${strongMsg} | Weak: ${weakMsg}`);
     }
   }
 
-  const lightStatus = (lightError as { status?: number })?.status;
-  const heavyStatus = (heavyError as { status?: number })?.status;
-  if (
-    lightStatus === 410 ||
-    heavyStatus === 410 ||
-    lightMsg.includes('410') ||
-    heavyMsg.includes('410')
-  ) {
-    (combinedError as unknown as { status: number }).status = 410;
-  } else if (
-    lightStatus === 404 ||
-    heavyStatus === 404 ||
-    lightMsg.includes('404') ||
-    heavyMsg.includes('404')
-  ) {
-    (combinedError as unknown as { status: number }).status = 404;
+  // Lock onto the winning model
+  const { winnerModel, firstToken, tokenStream, winnerTier } = winnerExecution;
+  activeModel = winnerModel;
+  activeTier = winnerTier;
+
+  // Clean UI: Signal that model has successfully connected before any rendering starts
+  options.onFirstToken?.(winnerModel, winnerTier);
+
+  // Feed first token into parser
+  parser.feed(firstToken);
+
+  // Consume remainder of the winning stream linearly with zero stream switching
+  try {
+    for await (const chunk of tokenStream) {
+      parser.feed(chunk);
+    }
+  } catch (streamErr) {
+    // If stream aborted or errored during delivery, finalize what we have
   }
 
-  throw combinedError;
+  const parseResult = await parser.finalize();
+
+  const isStrong = winnerTier === 'strong';
+  return {
+    winnerModel,
+    winnerRole: isStrong ? 'heavy' : 'light',
+    winnerTier,
+    handoffOccurred: false,
+    handoffElapsedMs: 0,
+    lightAborted: isStrong,
+    heavyAborted: !isStrong,
+    parseResult,
+    finalTerminalOutput,
+  };
 }
+
+/**
+ * Alias for tieredFallback to maintain complete backward compatibility with all commands & callers.
+ */
+export const raceModels = tieredFallback;

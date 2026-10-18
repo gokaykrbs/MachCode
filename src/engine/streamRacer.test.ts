@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { raceModels } from './streamRacer.js';
+import { tieredFallback, raceModels } from './streamRacer.js';
 
 interface MockStreamChunk {
   delayMs: number;
@@ -9,10 +9,10 @@ interface MockStreamChunk {
 
 /**
  * Creates a mock `fetch` implementation that simulates OpenAI-compatible SSE streams
- * for `lightModel` and `heavyModel` with deterministic per-chunk delays and AbortSignal support.
+ * with deterministic per-chunk delays and AbortSignal support.
  */
 function createMockNimFetch(
-  schedules: Record<string, MockStreamChunk[]>,
+  schedules: Record<string, MockStreamChunk[] | { errorStatus: number; errorBody?: string }>,
   recordedRequests: Array<{ url: string; model: string; stream: boolean }>,
 ): typeof fetch {
   return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -27,7 +27,15 @@ function createMockNimFetch(
       stream: Boolean(parsedBody.stream),
     });
 
-    const chunks = schedules[parsedBody.model] ?? [];
+    const target = schedules[parsedBody.model];
+    if (target && 'errorStatus' in target) {
+      return new Response(target.errorBody ?? 'API Error', {
+        status: target.errorStatus,
+        statusText: 'Internal Error',
+      });
+    }
+
+    const chunks = (target as MockStreamChunk[]) ?? [];
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream<Uint8Array>({
@@ -95,149 +103,91 @@ function createMockNimFetch(
   };
 }
 
-describe('Streaming Handoff Engine (raceModels)', () => {
-  const LIGHT_MODEL = 'meta/llama-3.1-70b-instruct';
-  const HEAVY_MODEL = 'deepseek-ai/deepseek-r1';
+describe('Tiered Priority Fallback Engine (tieredFallback / raceModels)', () => {
+  const WEAK_MODEL = 'meta/llama-3.2-11b-vision-instruct';
+  const STRONG_MODEL = 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
 
-  it('performs THE HANDOFF when Heavyweight starts within the 3-second window after Lightweight', async () => {
+  it('prioritizes StrongPool: locks onto Strong model when it successfully connects', async () => {
     const recordedRequests: Array<{ url: string; model: string; stream: boolean }> = [];
-    let clearedOutput = '';
-    let handoffDetails: {
-      fromModel: string;
-      toModel: string;
-      elapsedMs: number;
-      clearedTerminalOutput: string;
-    } | null = null;
+    let firstTokenReceived = false;
 
     const mockFetch = createMockNimFetch(
       {
-        [LIGHT_MODEL]: [
-          { delayMs: 20, content: '<plan>Light thinking</plan>\n' },
-          { delayMs: 30, content: '```typescript\nconst source = "light";\n' },
-          // Next chunk happens at 300ms, after Heavyweight has already taken over at 90ms
-          { delayMs: 250, content: 'export default source;\n```' },
+        [STRONG_MODEL]: [
+          { delayMs: 15, content: '<plan>Strong deep architecture</plan>\n' },
+          { delayMs: 20, content: '```typescript\nexport const answer = 42;\n```' },
         ],
-        [HEAVY_MODEL]: [
-          // Starts at 90ms (70ms after Light's first token — well inside the 3000ms handoff window!)
-          { delayMs: 90, content: '<plan>Heavy deep architecture</plan>\n' },
-          { delayMs: 30, content: '```typescript\n' },
-          { delayMs: 30, content: 'export const source = "heavy-winner";\n```' },
+        [WEAK_MODEL]: [
+          { delayMs: 5, content: '<plan>Weak plan</plan>\n' },
+          { delayMs: 10, content: '```typescript\nexport const answer = 0;\n```' },
         ],
       },
       recordedRequests,
     );
 
-    const result = await raceModels('Write source constant', LIGHT_MODEL, HEAVY_MODEL, {
+    const result = await tieredFallback('Write answer constant', WEAK_MODEL, STRONG_MODEL, {
       apiKey: 'nvapi-test-key',
-      handoffWindowMs: 3000,
       writeToStdout: false,
       debugLogPath: null,
       fetchImpl: mockFetch,
-      onTerminalClear: (cleared) => {
-        clearedOutput = cleared;
-      },
-      onHandoff: (details) => {
-        handoffDetails = details;
+      onFirstToken: (model, tier) => {
+        assert.equal(model, STRONG_MODEL);
+        assert.equal(tier, 'strong');
+        firstTokenReceived = true;
       },
     });
 
-    // Both endpoints called with stream: true
+    assert.equal(firstTokenReceived, true);
+    assert.equal(result.winnerTier, 'strong');
+    assert.equal(result.winnerModel, STRONG_MODEL);
+    assert.equal(result.parseResult.plan, 'Strong deep architecture');
+    assert.equal(result.parseResult.extractedCode, 'export const answer = 42;');
+
+    // Only Strong model was called because it succeeded
+    assert.equal(recordedRequests.length, 1);
+    assert.equal(recordedRequests[0].model, STRONG_MODEL);
+  });
+
+  it('falls back to WeakPool when Strong model fails with HTTP error', async () => {
+    const recordedRequests: Array<{ url: string; model: string; stream: boolean }> = [];
+    let fallbackTriggered = false;
+
+    const mockFetch = createMockNimFetch(
+      {
+        [STRONG_MODEL]: { errorStatus: 404, errorBody: 'Function not found' },
+        [WEAK_MODEL]: [
+          { delayMs: 10, content: '<plan>Fallback fast plan</plan>\n' },
+          { delayMs: 15, content: '```typescript\nexport const fallbackActive = true;\n```' },
+        ],
+      },
+      recordedRequests,
+    );
+
+    const result = await raceModels('Write fallback flag', WEAK_MODEL, STRONG_MODEL, {
+      apiKey: 'nvapi-test-key',
+      writeToStdout: false,
+      debugLogPath: null,
+      fetchImpl: mockFetch,
+      onFallback: (fromTier, toTier) => {
+        assert.equal(fromTier, 'strong');
+        assert.equal(toTier, 'weak');
+        fallbackTriggered = true;
+      },
+    });
+
+    assert.equal(fallbackTriggered, true);
+    assert.equal(result.winnerTier, 'weak');
+    assert.equal(result.winnerModel, WEAK_MODEL);
+    assert.equal(result.parseResult.plan, 'Fallback fast plan');
+    assert.equal(result.parseResult.extractedCode, 'export const fallbackActive = true;');
+
+    // Strong model was called first, then Weak model was called as fallback
     assert.equal(recordedRequests.length, 2);
-    assert.ok(recordedRequests.every((r) => r.stream === true));
-    assert.ok(recordedRequests.every((r) => r.url.endsWith('/v1/chat/completions')));
-
-    // Handoff assertions
-    assert.equal(result.handoffOccurred, true);
-    assert.equal(result.winnerRole, 'heavy');
-    assert.equal(result.winnerModel, HEAVY_MODEL);
-    assert.equal(result.lightAborted, true);
-    assert.equal(result.heavyAborted, false);
-    assert.ok(clearedOutput.includes('const source = "light";'));
-    assert.ok(handoffDetails !== null);
-
-    // Final output is 100% from Heavyweight model from the beginning
-    assert.equal(result.parseResult.plan, 'Heavy deep architecture');
-    assert.equal(result.parseResult.extractedCode, 'export const source = "heavy-winner";');
-    assert.ok(!result.finalTerminalOutput.includes('"light"'));
+    assert.equal(recordedRequests[0].model, STRONG_MODEL);
+    assert.equal(recordedRequests[1].model, WEAK_MODEL);
   });
 
-  it('aborts Heavyweight and sticks with Lightweight when Heavyweight exceeds the handoff window', async () => {
-    const recordedRequests: Array<{ url: string; model: string; stream: boolean }> = [];
-    let windowExpiredCalled = false;
-
-    const mockFetch = createMockNimFetch(
-      {
-        [LIGHT_MODEL]: [
-          { delayMs: 15, content: '<plan>Fast light plan</plan>\n' },
-          { delayMs: 25, content: '```typescript\nexport const fast = true;\n```' },
-        ],
-        [HEAVY_MODEL]: [
-          // Delayed 500ms, which exceeds the 120ms test handoff window
-          {
-            delayMs: 500,
-            content: '<plan>Too slow heavy plan</plan>\n```ts\nconst slow = 1;\n```',
-          },
-        ],
-      },
-      recordedRequests,
-    );
-
-    const result = await raceModels('Write fast flag', LIGHT_MODEL, HEAVY_MODEL, {
-      apiKey: 'nvapi-test-key',
-      handoffWindowMs: 120,
-      writeToStdout: false,
-      debugLogPath: null,
-      fetchImpl: mockFetch,
-      onHandoffWindowExpired: () => {
-        windowExpiredCalled = true;
-      },
-    });
-
-    assert.equal(windowExpiredCalled, true);
-    assert.equal(result.handoffOccurred, false);
-    assert.equal(result.winnerRole, 'light');
-    assert.equal(result.winnerModel, LIGHT_MODEL);
-    assert.equal(result.lightAborted, false);
-    assert.equal(result.heavyAborted, true);
-    assert.equal(result.parseResult.plan, 'Fast light plan');
-    assert.equal(result.parseResult.extractedCode, 'export const fast = true;');
-  });
-
-  it('immediately aborts Lightweight if Heavyweight emits the very first token first', async () => {
-    const recordedRequests: Array<{ url: string; model: string; stream: boolean }> = [];
-
-    const mockFetch = createMockNimFetch(
-      {
-        [LIGHT_MODEL]: [
-          { delayMs: 250, content: '<plan>Late light</plan>\n```ts\nconst x = 1;\n```' },
-        ],
-        [HEAVY_MODEL]: [
-          {
-            delayMs: 10,
-            content: '<plan>Instant heavy</plan>\n```ts\nexport const instant = 42;\n```',
-          },
-        ],
-      },
-      recordedRequests,
-    );
-
-    const result = await raceModels('Write instant constant', LIGHT_MODEL, HEAVY_MODEL, {
-      apiKey: 'nvapi-test-key',
-      handoffWindowMs: 3000,
-      writeToStdout: false,
-      debugLogPath: null,
-      fetchImpl: mockFetch,
-    });
-
-    assert.equal(result.handoffOccurred, false);
-    assert.equal(result.winnerRole, 'heavy');
-    assert.equal(result.winnerModel, HEAVY_MODEL);
-    assert.equal(result.lightAborted, true);
-    assert.equal(result.heavyAborted, false);
-    assert.equal(result.parseResult.extractedCode, 'export const instant = 42;');
-  });
-
-  it('forwards multi-turn session messages in request payload to both models', async () => {
+  it('forwards multi-turn session messages in request payload', async () => {
     const recordedPayloads: Array<{
       model: string;
       messages: Array<{ role: string; content: string }>;
@@ -272,9 +222,8 @@ describe('Streaming Handoff Engine (raceModels)', () => {
       { role: 'assistant' as const, content: 'export const token = "abc";' },
     ];
 
-    await raceModels('Now add refresh token function', LIGHT_MODEL, HEAVY_MODEL, {
+    await raceModels('Now add refresh token function', WEAK_MODEL, STRONG_MODEL, {
       apiKey: 'nvapi-test-key',
-      handoffWindowMs: 50,
       writeToStdout: false,
       debugLogPath: null,
       fetchImpl: mockFetch,
@@ -282,73 +231,55 @@ describe('Streaming Handoff Engine (raceModels)', () => {
     });
 
     assert.ok(recordedPayloads.length >= 1);
-    for (const payload of recordedPayloads) {
-      assert.ok(
-        payload.messages.some(
-          (m) => m.role === 'user' && m.content.includes('Previous prompt: create auth.ts'),
-        ),
-      );
-      assert.ok(
-        payload.messages.some(
-          (m) => m.role === 'assistant' && m.content.includes('export const token = "abc";'),
-        ),
-      );
-      assert.ok(
-        payload.messages.some(
-          (m) => m.role === 'user' && m.content.includes('Now add refresh token function'),
-        ),
-      );
-    }
+    const payload = recordedPayloads[0];
+    assert.ok(
+      payload.messages.some(
+        (m) => m.role === 'user' && m.content.includes('Previous prompt: create auth.ts'),
+      ),
+    );
+    assert.ok(
+      payload.messages.some(
+        (m) => m.role === 'assistant' && m.content.includes('export const token = "abc";'),
+      ),
+    );
+    assert.ok(
+      payload.messages.some(
+        (m) => m.role === 'user' && m.content.includes('Now add refresh token function'),
+      ),
+    );
   });
 
-  it('gracefully recovers and allows Heavyweight to win if Lightweight encounters an error', async () => {
-    let callCount = 0;
-    const mockFetch: typeof fetch = async (_input, init) => {
-      const parsedBody = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
-        model: string;
-      };
-      callCount++;
+  it('supports strongPool and weakPool options explicitly', async () => {
+    const recordedRequests: Array<{ url: string; model: string; stream: boolean }> = [];
 
-      if (parsedBody.model === LIGHT_MODEL) {
-        // Return 500 error for light model
-        return new Response('Rate limit exceeded', { status: 500 });
-      }
+    const mockFetch = createMockNimFetch(
+      {
+        'strong-a': { errorStatus: 500 },
+        'strong-b': [
+          { delayMs: 10, content: '```ts\nexport const strongB = true;\n```' },
+        ],
+        'weak-a': [
+          { delayMs: 10, content: '```ts\nexport const weakA = true;\n```' },
+        ],
+      },
+      recordedRequests,
+    );
 
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
-          setTimeout(() => {
-            const sse = `data: ${JSON.stringify({
-              choices: [
-                { index: 0, delta: { content: '```ts\nexport const heavyRecovery = true;\n```' } },
-              ],
-            })}\n\ndata: [DONE]\n\n`;
-            controller.enqueue(encoder.encode(sse));
-            controller.close();
-          }, 30);
-        },
-      });
-
-      return new Response(stream, {
-        status: 200,
-        headers: { 'Content-Type': 'text/event-stream' },
-      });
-    };
-
-    const result = await raceModels('Recover test', LIGHT_MODEL, HEAVY_MODEL, {
+    const result = await tieredFallback('Custom pool test', undefined, undefined, {
       apiKey: 'nvapi-test-key',
-      handoffWindowMs: 3000,
+      strongPool: ['strong-a', 'strong-b'],
+      weakPool: ['weak-a'],
       writeToStdout: false,
       debugLogPath: null,
       fetchImpl: mockFetch,
     });
 
-    assert.equal(result.winnerRole, 'heavy');
-    assert.equal(result.winnerModel, HEAVY_MODEL);
-    assert.equal(result.parseResult.extractedCode, 'export const heavyRecovery = true;');
+    assert.equal(result.winnerModel, 'strong-b');
+    assert.equal(result.winnerTier, 'strong');
+    assert.equal(result.parseResult.extractedCode, 'export const strongB = true;');
   });
 
-  it('strictly aborts and throws Timeout Error when both models fail to respond within timeoutMs', async () => {
+  it('strictly aborts and throws Timeout Error when all models in both pools hang', async () => {
     const mockFetch: typeof fetch = async (_input, init) => {
       const signal = init?.signal;
       return new Promise((_resolve, reject) => {
@@ -361,9 +292,9 @@ describe('Streaming Handoff Engine (raceModels)', () => {
     const startTime = Date.now();
     await assert.rejects(
       async () => {
-        await raceModels('Hanging test', LIGHT_MODEL, HEAVY_MODEL, {
+        await raceModels('Hanging test', WEAK_MODEL, STRONG_MODEL, {
           apiKey: 'nvapi-test-key',
-          timeoutMs: 80,
+          timeoutMs: 60,
           writeToStdout: false,
           debugLogPath: null,
           fetchImpl: mockFetch,
@@ -372,11 +303,8 @@ describe('Streaming Handoff Engine (raceModels)', () => {
       (err: Error) => {
         const elapsed = Date.now() - startTime;
         assert.ok(elapsed < 2000, `Expected timeout to resolve promptly, took ${elapsed}ms`);
-        assert.ok(
-          err.message.toLowerCase().includes('timeout') ||
-            err.message.toLowerCase().includes('timed out'),
-          `Expected timeout error message, got: ${err.message}`,
-        );
+        assert.equal(err.message, '❌ API Timeout: No response in 10s');
+        assert.equal((err as { isTimeout?: boolean }).isTimeout, true);
         return true;
       },
     );

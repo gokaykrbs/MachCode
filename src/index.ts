@@ -91,6 +91,10 @@ export interface MachCodeRunOptions {
    * Maximum number of QUESTION clarification rounds before stopping. Defaults to 3.
    */
   maxQuestionRounds?: number;
+  /**
+   * Optional active readline interface to pause during spinner/stream execution.
+   */
+  rl?: readline.Interface;
 }
 
 export interface MachCodeRunResult {
@@ -385,15 +389,16 @@ export async function runMachCode(
       '\n' +
         chalk.bgCyan.black.bold(' MACHCODE ') +
         ' ' +
-        chalk.cyan.bold('Streaming Handoff Racing Engine'),
+        chalk.cyan.bold('Tiered Priority Fallback Engine'),
     );
   }
 
   let currentPrompt = initialPrompt;
   let questionRounds = 0;
+  let autoHealRetries = 0;
+  const deprecatedModels = new Set<string>();
 
   while (true) {
-    let handoffTriggered = false;
     const { contextText, inferredTargetFile } = await gatherWorkspaceContext(
       currentPrompt,
       baseDir,
@@ -403,12 +408,27 @@ export async function runMachCode(
     );
     const systemPrompt = buildSniperSystemPrompt(contextText);
 
+    options.rl?.pause?.();
+
     const spinner = writeToStdout
       ? ora({
-          text: chalk.cyan.bold('Racing models...'),
+          text: chalk.cyan.bold('Connecting to model...'),
           color: 'cyan',
+          stream: process.stdout,
         }).start()
       : null;
+
+    const stopAndClearSpinner = () => {
+      if (spinner) {
+        if (spinner.isSpinning) {
+          spinner.stop();
+        }
+        spinner.clear();
+      }
+      if (writeToStdout) {
+        process.stdout.write('\r\x1b[2K');
+      }
+    };
 
     const startTime = Date.now();
 
@@ -424,40 +444,31 @@ export async function runMachCode(
         fetchImpl: options.fetchImpl,
         promptOnQuestion: false,
         messages: options.history?.map((m) => ({ role: m.role, content: m.content })),
-        onFirstToken: (model, role) => {
-          if (spinner && spinner.isSpinning) {
-            spinner.stop();
-          }
-          if (writeToStdout && role === 'light') {
-            console.log(
-              chalk.dim(
-                `⚡ First token from lightweight model (${model}) — 3s handoff window active...\n`,
-              ),
-            );
-          } else if (writeToStdout && role === 'heavy' && !handoffTriggered) {
-            console.log(chalk.magenta.bold(`🔥 Streaming from heavyweight model (${model})...\n`));
+        onFirstToken: (model, tier) => {
+          stopAndClearSpinner();
+          if (writeToStdout) {
+            if (tier === 'strong') {
+              console.log(chalk.magenta.bold(`⚡ Streaming from strong model (${model})...\n`));
+            } else {
+              console.log(chalk.blue.bold(`⚡ Streaming from fallback model (${model})...\n`));
+            }
           }
         },
-        onHandoff: ({ fromModel, toModel, elapsedMs }) => {
-          handoffTriggered = true;
-          if (spinner && spinner.isSpinning) {
-            spinner.stop();
-          }
+        onFallback: (_fromTier, _toTier, _reason) => {
           if (writeToStdout) {
             console.log(
-              chalk.bgMagenta.white.bold(' HANDOFF ') +
-                ' ' +
-                chalk.magenta.bold(
-                  `Heavyweight (${toModel}) started within ${elapsedMs}ms — aborted ${fromModel} & restarted stream:\n`,
-                ),
+              chalk.yellow.dim(
+                `\n⚠️  Strong model failed or timed out. Falling back to fast model...\n`,
+              ),
             );
           }
+        },
+        onTerminalChunk: () => {
+          stopAndClearSpinner();
         },
       });
     } catch (err: unknown) {
-      if (spinner && spinner.isSpinning) {
-        spinner.stop();
-      }
+      stopAndClearSpinner();
 
       const isUnavailable =
         (err as { status?: number })?.status === 410 ||
@@ -468,14 +479,24 @@ export async function runMachCode(
             err.message.includes('HTTP 410') ||
             err.message.includes('HTTP 404')));
 
-      if (isUnavailable) {
+      if (isUnavailable && autoHealRetries < 5) {
+        autoHealRetries++;
         // Auto-Healing: Silently re-fetch /v1/models, run AutoRouter to find next best active models, and retry
-        const deprecated = new Set<string>();
-        const badModel = (err as { model?: string })?.model || lightModel;
-        deprecated.add(badModel);
+        const badModel = (err as { model?: string })?.model;
+        if (badModel) {
+          deprecatedModels.add(badModel);
+        } else {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          if (errMsg.includes(lightModel)) deprecatedModels.add(lightModel);
+          if (errMsg.includes(heavyModel)) deprecatedModels.add(heavyModel);
+          if (!deprecatedModels.has(lightModel) && !deprecatedModels.has(heavyModel)) {
+            deprecatedModels.add(lightModel);
+            deprecatedModels.add(heavyModel);
+          }
+        }
 
         const newModels = await autoAssignAndSaveModels(apiKey, undefined, options.fetchImpl, {
-          exclude: deprecated,
+          exclude: deprecatedModels,
         });
         lightModel = newModels.lightModel;
         heavyModel = newModels.heavyModel;
@@ -485,9 +506,7 @@ export async function runMachCode(
       throw err;
     }
 
-    if (spinner && spinner.isSpinning) {
-      spinner.stop();
-    }
+    stopAndClearSpinner();
 
     // Handle Stop & Ask Protocol (`QUESTION:`)
     if (raceResult.parseResult.isHalted && raceResult.parseResult.question) {
@@ -531,9 +550,7 @@ export async function runMachCode(
       console.log(
         chalk.green.bold(`\n✨ Done in ${elapsedSec}s `) +
           chalk.gray(
-            `via ${raceResult.winnerModel}${
-              raceResult.handoffOccurred ? ' (after seamless handoff)' : ''
-            }`,
+            `via ${raceResult.winnerModel} [${raceResult.winnerTier || raceResult.winnerRole}]`,
           ),
       );
     }
@@ -650,72 +667,83 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     prompt: string,
     runOpts?: MachCodeRunOptions,
   ): Promise<MachCodeRunResult> => {
-    const mergedOptions: MachCodeRunOptions = {
-      ...options,
-      ...runOpts,
-      baseDir,
-      lightModel: runOpts?.lightModel ?? lightModel,
-      heavyModel: runOpts?.heavyModel ?? heavyModel,
-      handoffWindowMs: runOpts?.handoffWindowMs ?? handoffWindowMs,
-      history: sessionHistory,
-      addedFiles: addedContextFiles,
-      onBeforeWrite: async (targetPath: string, workspaceDir: string) => {
-        try {
-          const existing = await read_file(targetPath, workspaceDir);
-          fileSnapshots.push({
-            file: targetPath,
-            previousContent: existing,
-            timestamp: Date.now(),
-          });
-        } catch {
-          fileSnapshots.push({
-            file: targetPath,
-            previousContent: '__FILE_DID_NOT_EXIST__',
-            timestamp: Date.now(),
-          });
-        }
-      },
-      askUserQuestion: async (question: string) => {
-        console.log(
-          '\n' +
-            chalk.bgYellow.black.bold(' ? QUESTION ') +
-            ' ' +
-            chalk.yellow.bold(question) +
-            '\n',
-        );
-        while (true) {
-          const answer = await rl.question(
-            chalk.yellow.bold('➤ ') + chalk.white.bold('Enter clarification: '),
-          );
-          const trimmedAns = answer.trim();
-          if (trimmedAns.length > 0) {
-            return trimmedAns;
+    rl?.pause?.();
+    try {
+      const mergedOptions: MachCodeRunOptions = {
+        ...options,
+        ...runOpts,
+        rl,
+        baseDir,
+        lightModel: runOpts?.lightModel ?? lightModel,
+        heavyModel: runOpts?.heavyModel ?? heavyModel,
+        handoffWindowMs: runOpts?.handoffWindowMs ?? handoffWindowMs,
+        history: sessionHistory,
+        addedFiles: addedContextFiles,
+        onBeforeWrite: async (targetPath: string, workspaceDir: string) => {
+          try {
+            const existing = await read_file(targetPath, workspaceDir);
+            fileSnapshots.push({
+              file: targetPath,
+              previousContent: existing,
+              timestamp: Date.now(),
+            });
+          } catch {
+            fileSnapshots.push({
+              file: targetPath,
+              previousContent: '__FILE_DID_NOT_EXIST__',
+              timestamp: Date.now(),
+            });
           }
-          console.log(chalk.yellow('Please provide a non-empty response to continue.'));
-        }
-      },
-    };
+        },
+        askUserQuestion: async (question: string) => {
+          rl?.resume?.();
+          try {
+            console.log(
+              '\n' +
+                chalk.bgYellow.black.bold(' ? QUESTION ') +
+                ' ' +
+                chalk.yellow.bold(question) +
+                '\n',
+            );
+            while (true) {
+              const answer = await rl.question(
+                chalk.yellow.bold('➤ ') + chalk.white.bold('Enter clarification: '),
+              );
+              const trimmedAns = answer.trim();
+              if (trimmedAns.length > 0) {
+                return trimmedAns;
+              }
+              console.log(chalk.yellow('Please provide a non-empty response to continue.'));
+            }
+          } finally {
+            rl?.pause?.();
+          }
+        },
+      };
 
-    const result = await runMachCode(prompt, mergedOptions);
+      const result = await runMachCode(prompt, mergedOptions);
 
-    // Update session tokens & history
-    const promptTokens = Math.ceil(prompt.length / 4);
-    const completionTokens = Math.ceil(
-      (result.raceResult.parseResult.visibleOutput.length || 80) / 4,
-    );
-    tokenStats.estimatedPromptTokens += promptTokens;
-    tokenStats.estimatedCompletionTokens += completionTokens;
-    tokenStats.totalTurns += 1;
+      // Update session tokens & history
+      const promptTokens = Math.ceil(prompt.length / 4);
+      const completionTokens = Math.ceil(
+        (result.raceResult.parseResult.visibleOutput.length || 80) / 4,
+      );
+      tokenStats.estimatedPromptTokens += promptTokens;
+      tokenStats.estimatedCompletionTokens += completionTokens;
+      tokenStats.totalTurns += 1;
 
-    sessionHistory.push({ role: 'user', content: prompt });
-    const assistantOutput =
-      result.raceResult.parseResult.visibleOutput.trim() ||
-      (result.executionSummary.modifiedFiles.length > 0
-        ? `Modified files: ${result.executionSummary.modifiedFiles.join(', ')}`
-        : 'Task completed.');
-    sessionHistory.push({ role: 'assistant', content: assistantOutput });
+      sessionHistory.push({ role: 'user', content: prompt });
+      const assistantOutput =
+        result.raceResult.parseResult.visibleOutput.trim() ||
+        (result.executionSummary.modifiedFiles.length > 0
+          ? `Modified files: ${result.executionSummary.modifiedFiles.join(', ')}`
+          : 'Task completed.');
+      sessionHistory.push({ role: 'assistant', content: assistantOutput });
 
-    return result;
+      return result;
+    } finally {
+      rl?.resume?.();
+    }
   };
 
   const commandContext: CommandContext = {
@@ -755,9 +783,18 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           err.message.includes('HTTP 404')));
 
     if (isUnavailable) {
-      // Auto-Healing: Silently re-fetch /v1/models, run AutoRouter to find next best active models, and retry
-      const badModel = (err as { model?: string })?.model || lightModel || heavyModel;
-      deprecatedModels.add(badModel);
+      const badModel = (err as { model?: string })?.model;
+      if (badModel) {
+        deprecatedModels.add(badModel);
+      } else {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (errMsg.includes(lightModel)) deprecatedModels.add(lightModel);
+        if (errMsg.includes(heavyModel)) deprecatedModels.add(heavyModel);
+        if (!deprecatedModels.has(lightModel) && !deprecatedModels.has(heavyModel)) {
+          deprecatedModels.add(lightModel);
+          deprecatedModels.add(heavyModel);
+        }
+      }
 
       try {
         const activeApiKey = commandContext.apiKey ?? (await ensureConfig()).nvidiaApiKey;
@@ -788,16 +825,26 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     }
 
     const rawMsg = err instanceof Error ? err.message : String(err);
-    const isTimeoutOrNetwork =
+    const isTimeout =
       (err as { isTimeout?: boolean })?.isTimeout ||
+      rawMsg.includes('API Timeout') ||
+      rawMsg.includes('No response in 10s') ||
       rawMsg.toLowerCase().includes('timeout') ||
+      rawMsg.toLowerCase().includes('timed out');
+
+    if (isTimeout) {
+      console.error(chalk.red.bold('\n❌ API Timeout: No response in 10s\n'));
+      return false;
+    }
+
+    const isNetwork =
       rawMsg.toLowerCase().includes('network') ||
       rawMsg.toLowerCase().includes('failed to stream') ||
       rawMsg.toLowerCase().includes('fetch') ||
       rawMsg.toLowerCase().includes('econnrefused') ||
       rawMsg.toLowerCase().includes('etimedout');
 
-    if (isTimeoutOrNetwork) {
+    if (isNetwork) {
       console.error(
         chalk.red(
           `\n✖ Network timeout or API failure. Please check your connection and try again.\n`,
@@ -828,11 +875,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       try {
         await handleExecutionError(err, firstPrompt);
       } catch {
-        console.error(
-          chalk.red(
-            '\n✖ Network timeout or API failure. Please check your connection and try again.\n',
-          ),
-        );
+        console.error(chalk.red.bold('\n❌ API Timeout: No response in 10s\n'));
       }
     }
   }
@@ -854,28 +897,30 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       continue;
     }
 
-    // Dynamic Slash Command Dispatch
-    if (trimmed.startsWith('/')) {
-      await commandRegistry.dispatch(trimmed, commandContext);
-      if (commandContext.shouldExit) {
-        break;
-      }
-      continue;
-    }
+    rl?.pause?.();
 
-    // Standard prompt instruction execution with silent 410/404 Auto-Healing & Error Boundaries
     try {
-      await executeInstruction(trimmed);
-    } catch (err) {
-      try {
-        await handleExecutionError(err, trimmed);
-      } catch {
-        console.error(
-          chalk.red(
-            '\n✖ Network timeout or API failure. Please check your connection and try again.\n',
-          ),
-        );
+      // Dynamic Slash Command Dispatch
+      if (trimmed.startsWith('/')) {
+        await commandRegistry.dispatch(trimmed, commandContext);
+        if (commandContext.shouldExit) {
+          break;
+        }
+        continue;
       }
+
+      // Standard prompt instruction execution with silent 410/404 Auto-Healing & Error Boundaries
+      try {
+        await executeInstruction(trimmed);
+      } catch (err) {
+        try {
+          await handleExecutionError(err, trimmed);
+        } catch {
+          console.error(chalk.red.bold('\n❌ API Timeout: No response in 10s\n'));
+        }
+      }
+    } finally {
+      rl?.resume?.();
     }
   }
 }

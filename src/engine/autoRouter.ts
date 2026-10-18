@@ -1,7 +1,8 @@
 /**
- * AutoRouter utility: autonomously categorizes and assigns active NIM models
- * into Lightweight (Fast) and Heavyweight (Smart) based on parameter counts,
- * coding capabilities, and instruction tuning.
+ * AutoRouter & Dynamic Model Categorization:
+ * Organizes active NVIDIA NIM models into:
+ * - StrongPool (parameters >= 30B, deep reasoning, heavyweight coding foundations)
+ * - WeakPool (parameters < 30B, lightweight, fast instruction models for immediate fallback)
  */
 
 export interface AutoRouteResult {
@@ -9,10 +10,17 @@ export interface AutoRouteResult {
   heavyModel: string;
 }
 
+export interface ModelPools {
+  strongPool: string[];
+  weakPool: string[];
+}
+
 export interface AutoRouterOptions {
   exclude?: Set<string> | string[];
   fallbackLight?: string;
   fallbackHeavy?: string;
+  fallbackStrong?: string;
+  fallbackWeak?: string;
 }
 
 const UNWANTED_SUBSTRINGS = [
@@ -46,6 +54,44 @@ export function extractModelParamCount(id: string): number | null {
     return parseInt(match[1], 10);
   }
   return null;
+}
+
+/**
+ * Determines whether a model qualifies for the StrongPool:
+ * - Parameter count >= 30B
+ * - Deep reasoning / thinking models (e.g. contains 'reason', 'r1', 'o1')
+ * - Ultra, super, or large foundation models
+ */
+export function isStrongModel(id: string): boolean {
+  const lower = id.toLowerCase();
+  if (
+    lower.includes('reason') ||
+    lower.includes('r1') ||
+    lower.includes('deepseek-r1') ||
+    lower.includes('o1') ||
+    lower.includes('ultra') ||
+    lower.includes('super')
+  ) {
+    return true;
+  }
+
+  const param = extractModelParamCount(lower);
+  if (param !== null) {
+    return param >= 30;
+  }
+
+  if (
+    lower.includes('70b') ||
+    lower.includes('120b') ||
+    lower.includes('405b') ||
+    lower.includes('34b') ||
+    lower.includes('32b') ||
+    lower.includes('large')
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -96,13 +142,13 @@ export function scoreModelRole(id: string, role: 'light' | 'heavy'): number {
       } else if (param < 6) {
         score += 30;
       } else {
-        score -= param; // Penalize large parameter models for fast streaming handoff racing
+        score -= param;
       }
     } else if (lower.includes('7b') || lower.includes('8b')) {
       score += 50;
     }
   } else {
-    // Look for larger parameter counts (e.g. 32b, 34b, 70b, 90b, 405b, large)
+    // Look for larger parameter counts (e.g. 30b, 32b, 34b, 70b, 90b, 405b, large)
     if (lower.includes('large') || lower.includes('ultra') || lower.includes('super')) {
       score += 30;
     }
@@ -114,7 +160,7 @@ export function scoreModelRole(id: string, role: 'light' | 'heavy'): number {
       } else if (param > 100) {
         score += 45;
       } else {
-        score -= 50 - param; // Penalize small parameter models for deep heavyweight tasks
+        score -= 50 - param;
       }
     } else if (lower.includes('70b') || lower.includes('405b') || lower.includes('32b')) {
       score += 70;
@@ -125,13 +171,14 @@ export function scoreModelRole(id: string, role: 'light' | 'heavy'): number {
 }
 
 /**
- * Autonomously selects the best Lightweight (Fast) and Heavyweight (Smart) models
- * from a list of active NVIDIA NIM models.
+ * Categorizes available NVIDIA NIM models into a StrongPool and a WeakPool.
+ * - StrongPool: parameters >= 30B or reasoning models
+ * - WeakPool: parameters < 30B, fast/small models for fallback
  */
-export function autoRouteModels(
+export function categorizeModels(
   availableModels: string[],
   options: AutoRouterOptions = {},
-): AutoRouteResult {
+): ModelPools {
   const excludeSet = new Set(
     Array.isArray(options.exclude)
       ? options.exclude
@@ -142,28 +189,42 @@ export function autoRouteModels(
 
   const usable = availableModels.filter((id) => !excludeSet.has(id) && isUsableGenerativeModel(id));
 
-  const fallbackLight = options.fallbackLight ?? 'meta/llama-3.1-8b-instruct';
-  const fallbackHeavy = options.fallbackHeavy ?? 'meta/llama-3.1-70b-instruct';
+  const fallbackStrong =
+    options.fallbackStrong ??
+    options.fallbackHeavy ??
+    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
+  const fallbackWeak =
+    options.fallbackWeak ??
+    options.fallbackLight ??
+    'meta/llama-3.2-11b-vision-instruct';
 
-  if (usable.length === 0) {
-    return {
-      lightModel: fallbackLight,
-      heavyModel: fallbackHeavy,
-    };
-  }
+  const strongCandidates = usable.filter((id) => isStrongModel(id));
+  const weakCandidates = usable.filter((id) => !isStrongModel(id));
 
-  const lightRanked = [...usable].sort(
-    (a, b) => scoreModelRole(b, 'light') - scoreModelRole(a, 'light'),
-  );
-  const heavyRanked = [...usable].sort(
+  const strongPool = strongCandidates.sort(
     (a, b) => scoreModelRole(b, 'heavy') - scoreModelRole(a, 'heavy'),
   );
-
-  const lightModel = lightRanked[0];
-  const heavyModel = heavyRanked.find((m) => m !== lightModel) ?? heavyRanked[0] ?? fallbackHeavy;
+  const weakPool = weakCandidates.sort(
+    (a, b) => scoreModelRole(b, 'light') - scoreModelRole(a, 'light'),
+  );
 
   return {
-    lightModel: lightModel ?? fallbackLight,
-    heavyModel: heavyModel ?? fallbackHeavy,
+    strongPool: strongPool.length > 0 ? strongPool : [fallbackStrong],
+    weakPool: weakPool.length > 0 ? weakPool : [fallbackWeak],
+  };
+}
+
+/**
+ * Autonomously selects the top Lightweight (Fast/Weak) and Heavyweight (Smart/Strong) models
+ * from a list of active NVIDIA NIM models.
+ */
+export function autoRouteModels(
+  availableModels: string[],
+  options: AutoRouterOptions = {},
+): AutoRouteResult {
+  const pools = categorizeModels(availableModels, options);
+  return {
+    lightModel: pools.weakPool[0] ?? options.fallbackLight ?? 'meta/llama-3.2-11b-vision-instruct',
+    heavyModel: pools.strongPool[0] ?? options.fallbackHeavy ?? 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
   };
 }

@@ -2,13 +2,13 @@
 
 <p align="center">
   <strong>The Sniper AI Code Editor CLI</strong><br />
-  <em>Zero-hallucination, blazing-fast AI code editor CLI powered by Streaming Handoff Racing, continuous interactive REPL, and NVIDIA NIM endpoints.</em>
+  <em>Zero-hallucination, blazing-fast AI code editor CLI powered by Tiered Priority Fallback, continuous interactive REPL, and NVIDIA NIM endpoints.</em>
 </p>
 
 <p align="center">
   <a href="https://github.com/gokaykrbs/MachCode/releases"><img src="https://img.shields.io/badge/version-v0.1.0-blue.svg?style=flat-square" alt="version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
-  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-39%2F39%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-38%2F38%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.6-blue.svg?style=flat-square&logo=typescript" alt="TypeScript" /></a>
   <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-Integrated-76B900.svg?style=flat-square&logo=nvidia" alt="NVIDIA NIM" /></a>
   <a href="#"><img src="https://img.shields.io/badge/REPL-Interactive-cyan.svg?style=flat-square" alt="REPL Mode" /></a>
@@ -18,7 +18,7 @@
 
 > _"Speed without hallucinations. Intelligence without the wait."_
 
-**MachCode** is a terminal-native, hyper-disciplined AI code editor CLI built for high-velocity software engineering. Inspired by the speed of modern developer workflows and the precision of agentic systems like Claude Code and Aider, MachCode solves the latency versus quality dilemma by concurrently racing multiple **NVIDIA Build (NIM)** LLM endpoints, keeping conversation context in a continuous **interactive REPL session**, and orchestrating workflows through an extensible **Command Registry**.
+**MachCode** is a terminal-native, hyper-disciplined AI code editor CLI built for high-velocity software engineering. Inspired by the speed of modern developer workflows and the precision of agentic systems like Claude Code and Aider, MachCode solves the latency versus quality dilemma with a resilient **Tiered Priority Fallback** across **NVIDIA Build (NIM)** LLM endpoints, keeping conversation context in a continuous **interactive REPL session**, and orchestrating workflows through an extensible **Command Registry**.
 
 ---
 
@@ -30,39 +30,37 @@
 2. **The Lightweight Dilemma:** Small models (8B - 14B) respond instantly, but frequently hallucinate APIs, omit strict types, or introduce conversational filler and broken syntax.
 3. **The One-Shot CLI Fatigue:** Traditional AI CLIs force developers to type `cli "prompt"` over and over for every single revision, discarding conversational memory, re-reading entire project trees from scratch, and breaking developer focus.
 
-### ⚡ The Solution: Streaming Handoff Racing & Continuous REPL
+### ⚡ The Solution: Tiered Priority Fallback & Continuous REPL
 
 MachCode re-engineers the terminal coding loop with three core pillars:
 
-#### 1. Streaming Handoff Racing Engine
+#### 1. Tiered Priority Fallback Engine ("Strong First, Weak as Fallback")
 
-Whenever an instruction is submitted, MachCode fires concurrent streaming requests to both a **Lightweight (Fast)** model and a **Heavyweight (Deep)** model on NVIDIA NIM:
+Whenever an instruction is submitted, MachCode prioritizes intelligence and depth with rock-solid resilience:
 
 ```
                           User Request
                                │
+                               ▼
+                    [Step 1: StrongPool Tier]
+              (e.g. Models >= 30B, Deep Reasoning)
+                               │
             ┌──────────────────┴──────────────────┐
+            │ 200 OK & Stream Starts              │ Fails / HTTP 4xx/5xx / 10s Timeout
             ▼                                     ▼
- [Lightweight Fast Model]               [Heavyweight Deep Model]
- (e.g. Llama-3.3-70B-Instruct)          (e.g. Qwen-2.5-Coder-32B)
-            │                                     │
-    Emits 1st Token (~200ms)                      │
-            │                                     │
-    Streams to Terminal                           │
-            │                                     │
-            ├───► Heavyweight starts within 3s? ──┼──► YES:
-            │                                     │    • Abort Lightweight stream instantly
-            │                                     │    • Clear terminal via ANSI escape sequences
-            │                                     │    • Stream Heavyweight from Token 0!
-            │                                     │
-            └───► Timeout after 3 seconds ────────┴──► NO:
-                                                       • Abort Heavyweight request
-                                                       • Keep Lightweight stream to completion
+  [Instant Lock & Stream]               [Step 2: WeakPool Fallback Tier]
+  • Stream cleanly to Terminal           (e.g. Models < 30B, Fast Models)
+  • Abort pending requests                                │
+  • Zero mid-sentence glitches                            ▼
+                                                [Connect & Stream]
+                                                • Guarantees response
+                                                • Never leaves user hanging
 ```
 
-- **Instant Visual Feedback:** The Lightweight model starts typing almost immediately (~200ms).
-- **The 3-Second Grace Window:** If the Heavyweight model awakens within 3 seconds, MachCode aborts the lightweight stream, wipes previously rendered output, and streams the deep model's solution with zero quality loss.
-- **Resilient Fallback:** If the Heavyweight model stalls or queues, MachCode seamlessly retains the fast model without hanging your shell.
+- **Dynamic Categorization:** Autonomously categorizes active NVIDIA NIM models into a `StrongPool` (parameters $\ge$ 30B / reasoning models) and a `WeakPool` (parameters < 30B / fast models).
+- **Strong First Priority:** First attempts requests with `StrongPool` models for maximum reasoning quality and zero hallucinations.
+- **Instant Lock & Glitch-Free UI:** As soon as a strong model returns 200 OK and emits tokens, MachCode locks onto it, streams directly to the terminal, and cleanly aborts pending requests. Streams never switch mid-sentence.
+- **Resilient Fallback to WeakPool:** If and only if all strong models fail, error out (HTTP 4xx/5xx), or hit the strict 10s timeout, MachCode immediately falls back to the `WeakPool` to guarantee a fast, reliable response.
 
 #### 2. Continuous Interactive REPL Session
 
@@ -83,10 +81,10 @@ Rather than a fragile switch statement, MachCode implements an open **Command Pa
 
 ## ✨ Key Features
 
-- 🏎️ **Streaming Handoff Architecture:** Multi-endpoint concurrent streaming with deterministic `AbortController` handoffs and zero-flicker ANSI cursor rewrites.
-- 🤖 **Zero-Config Autonomous AutoRouter:** Dynamically discovers active NVIDIA NIM models in the background, autonomously routing smaller parameter models (7B/8B) as Lightweight and deep coding/reasoning models (32B/70B+) as Heavyweight with zero manual configuration menus.
+- 🏎️ **Tiered Priority Fallback Architecture:** Strict "Strong First, Weak as Fallback" model execution with instant lock-on, zero mid-sentence glitches, and automated fallback resilience.
+- 🤖 **Zero-Config Autonomous AutoRouter:** Dynamically discovers active NVIDIA NIM models in the background, autonomously categorizing them into `StrongPool` (≥30B / reasoning) and `WeakPool` (<30B / fast) tiers with zero manual configuration menus.
 - 🔄 **Self-Healing Deprecation Recovery:** Silently catches HTTP 410 and 404 model deprecation errors, re-scans active NIM endpoints, re-routes models, and retries the prompt without interrupting workflow.
-- ⏱️ **Strict 15s Timeout & Deadlock Safety:** Global `AbortController` and inactivity watchdogs on all HTTP requests and token streams ensure the CLI never deadlocks or hangs under network drops.
+- ⏱️ **Strict 10s Timeout & Deadlock Safety:** Global `AbortController` and hard 10-second request timeouts on all HTTP requests and token streams ensure the CLI never deadlocks or hangs under network drops.
 - 🌑 **Minimalist Dark Mode Terminal UI:** Eye-friendly, elegant terminal experience featuring a clean, quiet status dashboard and dedicated `[machcode✨] > ` REPL prompt.
 - 🔁 **Continuous Interactive REPL:** Dedicated interactive developer shell with live context retention across multi-step edits.
 - ⚡ **Scalable Slash Command System:** 17+ built-in slash commands organized by Category: _Context & Memory_, _Execution Modes_, _Safety & Git_, and _System_.
@@ -227,8 +225,8 @@ MachCode routes any input starting with `/` to the **Command Registry**.
 | Command   | Usage             | Aliases              | Description                                                                     |
 | :-------- | :---------------- | :------------------- | :------------------------------------------------------------------------------ |
 | `/plan`   | `/plan <prompt>`  | —                    | Formulate an architectural plan inside `<plan>` tags without writing any files. |
-| `/heavy`  | `/heavy <prompt>` | `/deep`, `/hw`       | Bypass streaming racing and execute exclusively with the Heavyweight model.     |
-| `/fast`   | `/fast <prompt>`  | `/light`, `/quick`   | Bypass streaming racing and execute exclusively with the Lightweight model.     |
+| `/heavy`  | `/heavy <prompt>` | `/deep`, `/hw`       | Execute exclusively with the Heavyweight (Strong) model.                        |
+| `/fast`   | `/fast <prompt>`  | `/light`, `/quick`   | Execute exclusively with the Lightweight (Weak) model.                          |
 | `/review` | `/review <file>`  | `/audit`, `/inspect` | Perform a deep code review (security, edge cases, bugs) without modifying code. |
 
 ### 🛡️ Safety & Git
@@ -269,8 +267,8 @@ machcode/
 │   │   └── index.ts         # Registry initializer & command aggregator
 │   ├── config/              # Configuration manager (~/.machcode/config.json) & dynamic model discovery
 │   ├── engine/
-│   │   ├── autoRouter.ts    # Autonomous model categorization (small fast vs large deep models)
-│   │   ├── streamRacer.ts   # Streaming Handoff Racing Engine with AbortControllers & strict timeouts
+│   │   ├── autoRouter.ts    # Autonomous model categorization (StrongPool vs WeakPool tiers)
+│   │   ├── streamRacer.ts   # Tiered Priority Fallback Engine with AbortControllers & 10s timeouts
 │   │   └── executor.ts      # Surgical code applier, write_file executor & onBeforeWrite snapshots
 │   ├── prompts/
 │   │   └── sniper.ts        # Zero-chatter, anti-hallucination "Sniper" system prompt
@@ -284,8 +282,8 @@ machcode/
 └── tsconfig.json
 ```
 
-- **`src/engine/autoRouter.ts`**: Autonomously scores and routes active NIM models by parameter size and instruction capability, eliminating manual model selection menus.
-- **`src/engine/streamRacer.ts`**: Connects concurrently to SSE chat completions endpoints. Choreographs the 3-second handoff race, monitors token arrival, guards against network hangs with strict timeouts, and cleans terminal lines via ANSI sequences when upgrading streams.
+- **`src/engine/autoRouter.ts`**: Autonomously scores and routes active NIM models into `StrongPool` (≥30B / reasoning) and `WeakPool` (<30B / fast) tiers, eliminating manual model selection menus.
+- **`src/engine/streamRacer.ts`**: Implements the Tiered Priority Fallback architecture. Prioritizes the StrongPool tier, cleanly locks on upon 200 OK without mid-sentence glitches, enforces a hard 10-second timeout, and seamlessly falls back to the WeakPool tier if needed.
 - **`src/commands/commandHandler.ts`**: Dynamic registry mapping command names and aliases to modular handlers without hardcoded switch-case structures.
 - **`src/prompts/sniper.ts`**: The hyper-disciplined system prompt enforcing concise, zero-filler output, mandatory `// file: <path>` code fence headers, and the Stop & Ask protocol.
 - **`src/engine/executor.ts`**: Parses code blocks, validates file boundaries, invokes pre-write snapshot hooks for `/undo`, and generates formatted modification summaries.
@@ -295,7 +293,7 @@ machcode/
 
 ## 🧪 Testing
 
-MachCode ships with an exhaustive, enterprise-grade test suite covering autonomous AutoRouting, dynamic NIM model discovery, streaming handoff racing, strict timeout boundaries, REPL recovery, Stop & Ask loops, multi-turn context retention, and all slash commands (39 tests across 10 suites, 100% passing):
+MachCode ships with an exhaustive, enterprise-grade test suite covering autonomous AutoRouting, dynamic NIM model discovery, Tiered Priority Fallback, strict 10s timeout boundaries, REPL recovery, Stop & Ask loops, multi-turn context retention, and all slash commands (38 tests across 10 suites, 100% passing):
 
 ```bash
 # Run the complete test suite (builds and executes all suites)
@@ -314,13 +312,13 @@ npm run format:check
 ✔ Dynamic Model Fetching & Configuration (3 tests pass)
 ✔ Tools & NVIDIA Official Skills Integration (3 tests pass)
 ✔ Executor (src/engine/executor.ts) (2 tests pass)
-✔ Streaming Handoff Engine (raceModels) (6 tests pass)
+✔ Tiered Priority Fallback Engine (tieredFallback / raceModels) (5 tests pass)
 ✔ End-to-End CLI Execution Flow (runMachCode) (1 test pass)
 ✔ Interactive REPL Mode (startRepl) (4 tests pass)
 ✔ Sniper System Prompt (1 test pass)
 ✔ StreamParser (3 tests pass)
 
-ℹ tests 39 | pass 39 | fail 0
+ℹ tests 38 | pass 38 | fail 0
 ```
 
 ---
