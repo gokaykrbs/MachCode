@@ -154,9 +154,88 @@ export const contextCommand: SlashCommand = {
   },
 };
 
+export const cdCommand: SlashCommand = {
+  name: 'cd',
+  description: 'Change active workspace directory (e.g. /cd D:\\ or /cd ..)',
+  category: 'Context & Memory',
+  usage: '/cd <path>',
+  aliases: ['chdir'],
+  execute: async (args: string, context: CommandContext) => {
+    if (!args || args.trim().length === 0) {
+      console.log(chalk.cyan(`Current workspace directory: ${chalk.white.bold(context.baseDir)}`));
+      return;
+    }
+
+    const rawTarget = args.trim().replace(/^["']|["']$/g, '');
+    const resolvedPath = path.resolve(context.baseDir, rawTarget);
+
+    try {
+      const stats = await fs.stat(resolvedPath);
+      if (!stats.isDirectory()) {
+        console.log(chalk.red(`✖ Path is not a directory: ${rawTarget}`));
+        return;
+      }
+
+      context.baseDir = resolvedPath;
+      try {
+        process.chdir(resolvedPath);
+      } catch {
+        // Ignore if chdir fails on certain systems
+      }
+      context.addedContextFiles.clear();
+
+      const dirents = await fs.readdir(resolvedPath);
+      console.log(
+        '\n' +
+          chalk.green.bold('✔ Switched active workspace to: ') +
+          chalk.white.bold(resolvedPath) +
+          chalk.gray(` (${dirents.length} item(s) found)\n`),
+      );
+    } catch {
+      console.log(chalk.red(`✖ Directory not found or inaccessible: ${rawTarget}`));
+    }
+  },
+};
+
+export const lsCommand: SlashCommand = {
+  name: 'ls',
+  description: 'List files and directories in current workspace or path (e.g. /ls or /ls D:\\)',
+  category: 'Context & Memory',
+  usage: '/ls [path]',
+  aliases: ['dir', 'list'],
+  execute: async (args: string, context: CommandContext) => {
+    const rawTarget = args.trim() ? args.trim().replace(/^["']|["']$/g, '') : context.baseDir;
+    const resolvedPath = path.resolve(context.baseDir, rawTarget);
+
+    try {
+      const dirents = await fs.readdir(resolvedPath, { withFileTypes: true });
+      console.log(
+        chalk.cyan.bold(`\n📁 Directory: ${chalk.white(resolvedPath)} (${dirents.length} items)\n`),
+      );
+
+      const dirs = dirents
+        .filter((d) => d.isDirectory())
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const files = dirents.filter((d) => d.isFile()).sort((a, b) => a.name.localeCompare(b.name));
+
+      for (const d of dirs) {
+        console.log(`  ${chalk.cyan.bold('📁 ' + d.name + '/')}`);
+      }
+      for (const f of files) {
+        console.log(`  ${chalk.white('📄 ' + f.name)}`);
+      }
+      console.log('');
+    } catch (err) {
+      console.log(chalk.red(`✖ Failed to list directory "${rawTarget}": ${String(err)}`));
+    }
+  },
+};
+
 export const contextCommands: SlashCommand[] = [
   addCommand,
   dropCommand,
   resetCommand,
   contextCommand,
+  cdCommand,
+  lsCommand,
 ];

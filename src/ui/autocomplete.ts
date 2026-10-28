@@ -35,6 +35,8 @@ export function buildAutocompleteItems(registry?: CommandRegistry): Autocomplete
     { prefix: '/tokens', displayCommand: '/tokens', description: 'Show session token usage statistics' },
     { prefix: '/add', displayCommand: '/add <path>', description: 'Add file or directory to active session context' },
     { prefix: '/drop', displayCommand: '/drop <path>', description: 'Remove file or directory from session context' },
+    { prefix: '/cd', displayCommand: '/cd <path>', description: 'Change active workspace directory (e.g. /cd D:\\ or /cd ..)' },
+    { prefix: '/ls', displayCommand: '/ls [path]', description: 'List files and directories in current workspace or path' },
     { prefix: '/context', displayCommand: '/context', description: 'List currently loaded files and token usage estimate' },
     { prefix: '/reset', displayCommand: '/reset', description: 'Clear entire session history and context files' },
     { prefix: '/run', displayCommand: '/run <cmd>', description: 'Execute shell command directly in workspace' },

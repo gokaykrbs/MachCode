@@ -233,6 +233,37 @@ describe('Slash Command Registry & Command Handler', () => {
     assert.equal(context.tokenStats.totalTurns, 0);
   });
 
+  it('/cd switches the active workspace directory and /ls lists directory entries', async () => {
+    const originalCwd = process.cwd();
+    const tmpDir1 = await fs.mkdtemp(path.join(os.tmpdir(), 'machcode-cd1-'));
+    const tmpDir2 = await fs.mkdtemp(path.join(os.tmpdir(), 'machcode-cd2-'));
+
+    try {
+      await fs.writeFile(path.join(tmpDir2, 'sample.txt'), 'hello', 'utf-8');
+
+      const registry = createDefaultCommandRegistry();
+      const { context } = createMockContext({ baseDir: tmpDir1 });
+
+      assert.equal(context.baseDir, tmpDir1);
+
+      // 1. /cd to tmpDir2
+      await registry.dispatch(`/cd ${tmpDir2}`, context);
+      assert.equal(path.resolve(context.baseDir), path.resolve(tmpDir2));
+
+      // 2. /ls
+      const handledLs = await registry.dispatch('/ls', context);
+      assert.equal(handledLs, true);
+    } finally {
+      try {
+        process.chdir(originalCwd);
+      } catch {
+        // Ignore
+      }
+      await fs.rm(tmpDir1, { recursive: true, force: true });
+      await fs.rm(tmpDir2, { recursive: true, force: true });
+    }
+  });
+
   it('/undo reverts the last file modification made by the AI from in-memory snapshots', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'machcode-undo-'));
     try {

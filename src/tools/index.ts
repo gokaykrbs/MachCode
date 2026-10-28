@@ -67,9 +67,37 @@ export const WRITE_FILE_TOOL: OpenAIToolDefinition = {
 };
 
 /**
+ * Strict OpenAI Tool Calling JSON Schema for `list_directory`.
+ */
+export const LIST_DIRECTORY_TOOL: OpenAIToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'list_directory',
+    description:
+      'Lists all files and subdirectories inside a directory path (e.g. "." or "D:\\" or "src").',
+    strict: true,
+    parameters: {
+      type: 'object',
+      properties: {
+        dirPath: {
+          type: 'string',
+          description: 'Directory path to list files and folders from (e.g. "." or "D:\\").',
+        },
+      },
+      required: ['dirPath'],
+      additionalProperties: false,
+    },
+  },
+};
+
+/**
  * Core local filesystem tools.
  */
-export const CORE_LOCAL_TOOLS: OpenAIToolDefinition[] = [READ_FILE_TOOL, WRITE_FILE_TOOL];
+export const CORE_LOCAL_TOOLS: OpenAIToolDefinition[] = [
+  READ_FILE_TOOL,
+  WRITE_FILE_TOOL,
+  LIST_DIRECTORY_TOOL,
+];
 
 /**
  * Default combined tool array with core local tools and official NVIDIA Agent Skills integrated automatically.
@@ -77,24 +105,54 @@ export const CORE_LOCAL_TOOLS: OpenAIToolDefinition[] = [READ_FILE_TOOL, WRITE_F
 export const ALL_TOOLS: OpenAIToolDefinition[] = [...CORE_LOCAL_TOOLS, ...getNvidiaSkillTools()];
 
 /**
- * Resolves a target file path safely within the workspace directory, preventing unsafe directory traversal.
+ * Resolves a target file path safely within the workspace directory or absolute system drive path,
+ * preventing relative directory traversal escapes like `../`.
  */
 export function resolveWorkspacePath(filePath: string, baseDir: string = process.cwd()): string {
   if (!filePath || filePath.trim().length === 0) {
     throw new Error('File path cannot be empty.');
   }
 
+  const trimmed = filePath.trim();
+
+  // If path is an explicit absolute path (e.g. D:\... or C:\... or /...), resolve directly
+  if (path.isAbsolute(trimmed)) {
+    return path.resolve(trimmed);
+  }
+
   const resolvedBase = path.resolve(baseDir);
-  const resolvedTarget = path.resolve(resolvedBase, filePath.trim());
+  const resolvedTarget = path.resolve(resolvedBase, trimmed);
 
   const relative = path.relative(resolvedBase, resolvedTarget);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+  if (relative.startsWith('..')) {
     throw new Error(
       `Security violation: Path "${filePath}" resolves outside the workspace directory "${resolvedBase}".`,
     );
   }
 
   return resolvedTarget;
+}
+
+export interface DirectoryEntry {
+  name: string;
+  isDirectory: boolean;
+  isFile: boolean;
+}
+
+/**
+ * Lists the contents of a directory path.
+ */
+export async function list_directory(
+  dirPath = '.',
+  baseDir: string = process.cwd(),
+): Promise<DirectoryEntry[]> {
+  const resolvedPath = resolveWorkspacePath(dirPath, baseDir);
+  const dirents = await fs.readdir(resolvedPath, { withFileTypes: true });
+  return dirents.map((e) => ({
+    name: e.name,
+    isDirectory: e.isDirectory(),
+    isFile: e.isFile(),
+  }));
 }
 
 /**
@@ -170,6 +228,12 @@ export async function executeToolCall(
       }
       const result = await write_file(filePath, content, baseDir);
       return JSON.stringify(result);
+    }
+
+    case 'list_directory': {
+      const dirPath = typeof args.dirPath === 'string' ? args.dirPath : '.';
+      const entries = await list_directory(dirPath, baseDir);
+      return JSON.stringify(entries);
     }
 
     case 'load_nvidia_skill': {

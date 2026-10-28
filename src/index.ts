@@ -319,12 +319,36 @@ export async function gatherWorkspaceContext(
     }
   }
 
-  // Also check if the prompt mentions an explicit filename to create (e.g., "create src/auth.ts")
+  // Also check if the prompt mentions an explicit filename to create (e.g., "create src/auth.ts" or "D:\test.txt")
   if (!inferredTargetFile) {
     const fileMatch =
-      /\b([a-zA-Z0-9_./-]+\.(?:ts|tsx|js|jsx|py|json|css|html|md|cu|cpp|rs|go))\b/.exec(prompt);
+      /(?:^|\s|"|'|`)([a-zA-Z]:[/\\][^\s"'>`]+|[a-zA-Z0-9_./\\-]+\.(?:ts|tsx|js|jsx|py|json|css|html|md|cu|cpp|rs|go|txt|env|yaml|yml|sh))/i.exec(
+        prompt,
+      );
     if (fileMatch?.[1]) {
-      inferredTargetFile = fileMatch[1];
+      inferredTargetFile = fileMatch[1].trim();
+    }
+  }
+
+  // Check if the user prompt asks to reach or inspect an external drive (e.g. "D: ye ulas" or "D: deki projeler" or "C:")
+  const driveMatch = /\b([a-zA-Z]):(?:[/\\])?(?:\s|$|ye|e|yi|i|de|da)/i.exec(prompt);
+  if (driveMatch?.[1]) {
+    const driveLetter = driveMatch[1].toUpperCase();
+    const driveRoot = `${driveLetter}:\\`;
+    try {
+      const stats = await fs.stat(driveRoot);
+      if (stats.isDirectory()) {
+        const driveEntries = await fs.readdir(driveRoot, { withFileTypes: true });
+        const summary = driveEntries
+          .slice(0, 45)
+          .map((e) => `- [${e.isDirectory() ? 'DIR' : 'FILE'}] ${e.name}`)
+          .join('\n');
+        fileContentsSections.push(
+          `### Drive & Path Discovered (${driveRoot})\n${summary}\n(Instruction: The user can switch active workspace to this drive anytime with \`/cd ${driveRoot}\` or read/write files at full paths like \`${driveRoot}folder/file\`).`,
+        );
+      }
+    } catch {
+      // Drive not present or not mounted
     }
   }
 
@@ -444,9 +468,12 @@ export async function promptFileChangeApproval(
   );
   console.log(change.diffPreview + '\n');
 
-  const ownsRl = !existingRl;
-  const rl = existingRl ?? readline.createInterface({ input, output });
-  if (existingRl) {
+  const isRealTty = Boolean(process.stdin.isTTY);
+  const ownsRl = isRealTty || !existingRl;
+  const rl = isRealTty
+    ? readline.createInterface({ input, output })
+    : (existingRl ?? readline.createInterface({ input, output }));
+  if (!isRealTty && existingRl) {
     existingRl.resume?.();
   }
 
@@ -776,8 +803,35 @@ export async function runMachCode(
       .trim();
     const isPureCodeOutput =
       raceResult.parseResult.codeBlocks.length > 0 && strippedProse.length === 0;
+
+    const hasCodeBlocks = raceResult.parseResult.codeBlocks.length > 0;
+    const promptLower = initialPrompt.toLowerCase();
+    const promptHasFileIntent = Boolean(
+      inferredTargetFile &&
+        (promptLower.includes('oluştur') ||
+          promptLower.includes('olustur') ||
+          promptLower.includes('create') ||
+          promptLower.includes('yaz') ||
+          promptLower.includes('write') ||
+          promptLower.includes('güncelle') ||
+          promptLower.includes('guncelle') ||
+          promptLower.includes('update') ||
+          promptLower.includes('modify') ||
+          promptLower.includes('edit') ||
+          promptLower.includes('add') ||
+          promptLower.includes('ekle') ||
+          promptLower.includes('değiştir') ||
+          promptLower.includes('degistir') ||
+          promptLower.includes('fix') ||
+          promptLower.includes('düzelt') ||
+          promptLower.includes('duzelt')),
+    );
+
     const fallbackTarget =
-      options.targetFilePath ?? (isPureCodeOutput ? inferredTargetFile : undefined);
+      options.targetFilePath ??
+      (isPureCodeOutput || (hasCodeBlocks && promptHasFileIntent)
+        ? inferredTargetFile
+        : undefined);
 
     const effectiveConfirm =
       options.confirmBeforeWrite ??
@@ -1206,6 +1260,17 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     rl?.pause?.();
 
     try {
+      // Auto-detect drive change commands like "D:" or "cd D:\" or "cd .."
+      const driveOnlyMatch = /^[a-zA-Z]:[/\\]?$/.exec(trimmed);
+      const cdBareMatch = /^cd\s+(.+)$/i.exec(trimmed);
+      if (driveOnlyMatch || cdBareMatch) {
+        const targetPath = driveOnlyMatch
+          ? `${trimmed.toUpperCase().replace(/[/\\]?$/, '')}\\`
+          : cdBareMatch![1].trim();
+        await commandRegistry.dispatch(`/cd ${targetPath}`, commandContext);
+        continue;
+      }
+
       // Dynamic Slash Command Dispatch
       if (trimmed.startsWith('/')) {
         await commandRegistry.dispatch(trimmed, commandContext);

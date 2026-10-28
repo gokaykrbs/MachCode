@@ -35,6 +35,7 @@ describe('Tools & NVIDIA Official Skills Integration', () => {
     const toolNames = ALL_TOOLS.map((t) => t.function.name);
     assert.ok(toolNames.includes('read_file'));
     assert.ok(toolNames.includes('write_file'));
+    assert.ok(toolNames.includes('list_directory'));
     assert.ok(toolNames.includes('load_nvidia_skill'));
   });
 
@@ -96,7 +97,7 @@ describe('Tools & NVIDIA Official Skills Integration', () => {
       };
 
       const tools = await getIntegratedTools({ cacheDir: tmpCache, fetchImpl: mockFetch });
-      assert.equal(tools.length, 3);
+      assert.equal(tools.length, 4);
 
       const loadedSkill = await loadNvidiaSkill('cuopt-numerical-optimization-api', {
         cacheDir: tmpCache,

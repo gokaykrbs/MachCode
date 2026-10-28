@@ -55,11 +55,11 @@ export interface ExecutionSummary {
 }
 
 const FILE_HEADER_REGEX =
-  /^(?:\/\/|#|\/\*+|<!--)\s*(?:file|filepath|path):\s*([^\s*>-]+?)(?:\s*\*+\/|\s*-->)?\s*\r?\n([\s\S]*)$/i;
+  /^(?:\/\/|#|\/\*+|<!--)\s*(?:(?:file|filepath|path):\s*)?([a-zA-Z]:[/\\][^\s*>-]+|[a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9_-]+)(?:\s*\*+\/|\s*-->)?\s*\r?\n([\s\S]*)$/i;
 
 /**
  * Inspects a code block for an optional leading file path annotation
- * such as `// file: src/index.ts` or `# file: main.py`.
+ * such as `// file: src/index.ts`, `// D:\test.txt`, or `# main.py`.
  */
 export function resolveBlockTarget(
   block: ExtractedCodeBlock,
@@ -67,10 +67,13 @@ export function resolveBlockTarget(
 ): { filePath: string; cleanCode: string } | null {
   const match = FILE_HEADER_REGEX.exec(block.code);
   if (match && match[1]) {
-    return {
-      filePath: match[1].trim(),
-      cleanCode: match[2] ?? '',
-    };
+    const rawPath = match[1].trim();
+    if (!rawPath.includes('://') && !rawPath.startsWith('e.g.') && !rawPath.startsWith('http')) {
+      return {
+        filePath: rawPath,
+        cleanCode: match[2] ?? '',
+      };
+    }
   }
 
   if (fallbackFilePath && fallbackFilePath.trim().length > 0) {
