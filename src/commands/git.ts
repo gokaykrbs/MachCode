@@ -155,4 +155,51 @@ ${diffSummary}`;
   },
 };
 
-export const gitCommands: SlashCommand[] = [undoCommand, diffCommand, commitCommand];
+export const approveCommand: SlashCommand = {
+  name: 'approve',
+  description:
+    'Toggle interactive approval before modifying files (Ask Before Write vs Auto-Approve)',
+  category: 'Safety & Git',
+  usage: '/approve [ask|auto]',
+  aliases: ['confirm', 'permissions', 'auto-approve', 'yolo'],
+  execute: async (args: string, context: CommandContext) => {
+    const sub = args.trim().toLowerCase();
+
+    if (sub === 'ask' || sub === 'on' || sub === 'confirm' || sub === 'prompt') {
+      context.autoApprove = false;
+    } else if (sub === 'auto' || sub === 'off' || sub === 'yolo' || sub === 'yes') {
+      context.autoApprove = true;
+    } else if (sub === 'status') {
+      // Just display current status below
+    } else {
+      context.autoApprove = !context.autoApprove;
+    }
+
+    if (context.autoApprove) {
+      console.log(
+        '\n' +
+          chalk.yellow.bold('⚡ Approval Mode: AUTO-APPROVE ') +
+          chalk.gray('(File edits will be applied automatically without prompting)') +
+          '\n' +
+          chalk.dim('   Tip: Type /approve ask to re-enable confirmation before writing files.\n'),
+      );
+    } else {
+      console.log(
+        '\n' +
+          chalk.green.bold('🛡️  Approval Mode: ASK BEFORE WRITE ') +
+          chalk.gray(
+            '(MachCode will show a diff preview and ask [Y/n/a/d] before modifying any file)',
+          ) +
+          '\n' +
+          chalk.dim('   Tip: Type /approve auto to enable automatic file writes.\n'),
+      );
+    }
+  },
+};
+
+export const gitCommands: SlashCommand[] = [
+  approveCommand,
+  undoCommand,
+  diffCommand,
+  commitCommand,
+];

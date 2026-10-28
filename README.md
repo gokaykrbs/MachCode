@@ -76,6 +76,7 @@ MachCode features a compact **13-column geometric block logo** and dynamic viewp
 ## ✨ Key Features
 
 - 🏁 **57+ Model Parallel Racing Engine:** Simultaneously races all usable generative models across 21+ AI providers in your NVIDIA NIM account and locks onto the fastest responder.
+- 🛡️ **Antigravity / Claude Code Style Interactive Approval:** Shows a colorized line-diff preview card before creating or modifying any file and prompts `[Y]es / [n]o / [a]ll / [d]iff` (can be toggled anytime with `/approve` or `-y / --auto-approve`).
 - 💬 **Antigravity / Claude Code Grade Q&A + Coding:** Seamlessly chat, ask questions in any language, explain codebases, or trigger autonomous multi-file edits in the same session.
 - 📊 **Live Race Telemetry & `/race` Benchmark:** Every response displays the winning model, provider count, and exact first-token latency (`🏁 Race Winner`), plus a dedicated `/race` command for live parallel speed tests.
 - 🤖 **Zero-Config Autonomous AutoRouter:** Dynamically discovers active NVIDIA NIM models in the background and populates `strongPool` and `weakPool` in `~/.machcode/config.json`.
@@ -185,11 +186,12 @@ MachCode routes any input starting with `/` to the **Command Registry**.
 
 ### 🛡️ Safety & Git
 
-| Command   | Usage     | Aliases   | Description                                                                   |
-| :-------- | :-------- | :-------- | :---------------------------------------------------------------------------- |
-| `/undo`   | `/undo`   | `/revert` | Revert the last file modification made by the AI using in-memory snapshots.   |
-| `/diff`   | `/diff`   | —         | Inspect colorized terminal diff of uncommitted Git changes in the workspace.  |
-| `/commit` | `/commit` | `/ci`     | Analyze current git diff, generate a conventional commit message, and commit. |
+| Command    | Usage                   | Aliases                                              | Description                                                                   |
+| :--------- | :---------------------- | :--------------------------------------------------- | :---------------------------------------------------------------------------- |
+| `/approve` | `/approve [ask\|auto]`  | `/confirm`, `/permissions`, `/auto-approve`, `/yolo` | Toggle interactive diff approval before modifying files (Ask vs Auto-Approve).|
+| `/undo`    | `/undo`                 | `/revert`                                            | Revert the last file modification made by the AI using in-memory snapshots.   |
+| `/diff`    | `/diff`                 | —                                                    | Inspect colorized terminal diff of uncommitted Git changes in the workspace.  |
+| `/commit`  | `/commit`               | `/ci`                                                | Analyze current git diff, generate a conventional commit message, and commit. |
 
 ### ⚙️ System & Benchmarking
 

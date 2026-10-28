@@ -25,6 +25,10 @@ program
     'Streaming handoff window in milliseconds',
     String(DEFAULT_HANDOFF_WINDOW_MS),
   )
+  .option(
+    '-y, --yes, --auto-approve',
+    'Automatically approve and apply file changes without prompting',
+  )
   .argument('[prompt...]', 'Optional coding instruction to launch in interactive REPL session')
   .action(
     async (
@@ -34,6 +38,8 @@ program
         lightModel?: string;
         heavyModel?: string;
         window: string;
+        autoApprove?: boolean;
+        yes?: boolean;
       },
     ) => {
       const initialPrompt =
@@ -46,6 +52,7 @@ program
         lightModel: options.lightModel,
         heavyModel: options.heavyModel,
         handoffWindowMs,
+        autoApprove: Boolean(options.autoApprove || options.yes),
       });
     },
   );

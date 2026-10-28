@@ -265,6 +265,22 @@ describe('Slash Command Registry & Command Handler', () => {
     }
   });
 
+  it('/approve toggles interactive file write confirmation between Ask and Auto-Approve modes', async () => {
+    const registry = createDefaultCommandRegistry();
+    const { context } = createMockContext({ autoApprove: false });
+
+    assert.equal(context.autoApprove, false);
+    await registry.dispatch('/approve auto', context);
+    assert.equal(context.autoApprove, true);
+
+    await registry.dispatch('/approve ask', context);
+    assert.equal(context.autoApprove, false);
+
+    // Toggle without args
+    await registry.dispatch('/approve', context);
+    assert.equal(context.autoApprove, true);
+  });
+
   it('/exit and its aliases set shouldExit to true and close readline', async () => {
     const registry = createDefaultCommandRegistry();
     const { context, closed } = createMockContext();

@@ -31,6 +31,7 @@ export interface CommandContext {
   rl: readline.Interface;
   shouldExit: boolean;
   sessionId?: string;
+  autoApprove?: boolean;
   runMachCode: (prompt: string, options?: MachCodeRunOptions) => Promise<MachCodeRunResult>;
 }
 

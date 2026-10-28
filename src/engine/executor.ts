@@ -1,6 +1,20 @@
 import chalk from 'chalk';
-import { write_file, type WriteFileResult } from '../tools/index.js';
+import { read_file, write_file, type WriteFileResult } from '../tools/index.js';
 import type { ExtractedCodeBlock, StreamParseResult } from '../utils/streamParser.js';
+
+export type ConfirmWriteDecision = 'approve' | 'reject' | 'approve_all' | boolean;
+
+export interface ProposedFileChange {
+  targetPath: string;
+  baseDir: string;
+  isNewFile: boolean;
+  previousContent: string | null;
+  newContent: string;
+  addedLines: number;
+  removedLines: number;
+  diffPreview: string;
+  fullDiff: string;
+}
 
 export interface ExecutorOptions {
   /**
@@ -23,12 +37,20 @@ export interface ExecutorOptions {
    * Optional callback invoked immediately before a file is written or overwritten.
    */
   onBeforeWrite?: (targetPath: string, baseDir: string) => Promise<void> | void;
+  /**
+   * Optional confirmation callback invoked before writing each modified file (Antigravity / Claude Code style).
+   * Return true / 'approve' to write, false / 'reject' to skip, or 'approve_all' to write and auto-approve remaining files.
+   */
+  confirmBeforeWrite?: (
+    change: ProposedFileChange,
+  ) => Promise<ConfirmWriteDecision> | ConfirmWriteDecision;
 }
 
 export interface ExecutionSummary {
   modifiedFiles: WriteFileResult[];
+  rejectedFiles?: string[];
   skipped: boolean;
-  skippedReason?: 'halted_on_question' | 'no_code_extracted';
+  skippedReason?: 'halted_on_question' | 'no_code_extracted' | 'user_rejected';
   formattedSummary: string;
 }
 
@@ -62,24 +84,191 @@ export function resolveBlockTarget(
 }
 
 /**
+ * Computes line-level diff statistics and colorized unified diff output between previous and new file contents.
+ */
+export function computeFileDiff(
+  targetPath: string,
+  previousContent: string | null,
+  newContent: string,
+  maxPreviewLines = 14,
+): Omit<ProposedFileChange, 'baseDir'> {
+  const isNewFile = previousContent === null;
+  const oldLines =
+    previousContent !== null ? previousContent.replace(/\r?\n$/, '').split(/\r?\n/) : [];
+  const newLines = newContent.replace(/\r?\n$/, '').split(/\r?\n/);
+
+  if (isNewFile) {
+    const formattedLines = newLines.map((line, idx) =>
+      chalk.green(`  + ${String(idx + 1).padStart(3, ' ')} │ ${line}`),
+    );
+    const fullDiff = formattedLines.join('\n');
+    const previewSlice = formattedLines.slice(0, maxPreviewLines);
+    if (formattedLines.length > maxPreviewLines) {
+      previewSlice.push(
+        chalk.gray(
+          `    ... (+${formattedLines.length - maxPreviewLines} more lines — press [d] for full diff)`,
+        ),
+      );
+    }
+    return {
+      targetPath,
+      isNewFile: true,
+      previousContent,
+      newContent,
+      addedLines: newLines.length,
+      removedLines: 0,
+      diffPreview: previewSlice.join('\n'),
+      fullDiff,
+    };
+  }
+
+  // Compute LCS-style or windowed line diff for clear visualization
+  const diffRows: Array<{ type: 'same' | 'add' | 'del'; lineNum: number; text: string }> = [];
+  let i = 0;
+  let j = 0;
+  let addedLines = 0;
+  let removedLines = 0;
+
+  while (i < oldLines.length || j < newLines.length) {
+    if (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) {
+      diffRows.push({ type: 'same', lineNum: j + 1, text: newLines[j] });
+      i += 1;
+      j += 1;
+      continue;
+    }
+
+    // Look ahead up to 8 lines to resynchronize
+    let syncOld = -1;
+    let syncNew = -1;
+    const lookahead = 8;
+    for (let dist = 1; dist <= lookahead; dist++) {
+      if (j + dist < newLines.length && i < oldLines.length && oldLines[i] === newLines[j + dist]) {
+        syncOld = i;
+        syncNew = j + dist;
+        break;
+      }
+      if (i + dist < oldLines.length && j < newLines.length && oldLines[i + dist] === newLines[j]) {
+        syncOld = i + dist;
+        syncNew = j;
+        break;
+      }
+    }
+
+    if (syncOld !== -1 && syncNew !== -1) {
+      while (i < syncOld) {
+        diffRows.push({ type: 'del', lineNum: i + 1, text: oldLines[i] });
+        removedLines += 1;
+        i += 1;
+      }
+      while (j < syncNew) {
+        diffRows.push({ type: 'add', lineNum: j + 1, text: newLines[j] });
+        addedLines += 1;
+        j += 1;
+      }
+    } else {
+      if (i < oldLines.length) {
+        diffRows.push({ type: 'del', lineNum: i + 1, text: oldLines[i] });
+        removedLines += 1;
+        i += 1;
+      }
+      if (j < newLines.length) {
+        diffRows.push({ type: 'add', lineNum: j + 1, text: newLines[j] });
+        addedLines += 1;
+        j += 1;
+      }
+    }
+  }
+
+  // Keep changed lines plus 1 line of context around changes
+  const visibleIndices = new Set<number>();
+  diffRows.forEach((row, idx) => {
+    if (row.type !== 'same') {
+      if (idx > 0) visibleIndices.add(idx - 1);
+      visibleIndices.add(idx);
+      if (idx + 1 < diffRows.length) visibleIndices.add(idx + 1);
+    }
+  });
+
+  const formattedDiffLines: string[] = [];
+  let lastIdx = -1;
+  for (let idx = 0; idx < diffRows.length; idx++) {
+    if (!visibleIndices.has(idx)) {
+      continue;
+    }
+    if (lastIdx !== -1 && idx - lastIdx > 1) {
+      formattedDiffLines.push(chalk.cyan(`    @@ ... @@`));
+    }
+    const row = diffRows[idx];
+    const numStr = String(row.lineNum).padStart(3, ' ');
+    if (row.type === 'add') {
+      formattedDiffLines.push(chalk.green(`  + ${numStr} │ ${row.text}`));
+    } else if (row.type === 'del') {
+      formattedDiffLines.push(chalk.red(`  - ${numStr} │ ${row.text}`));
+    } else {
+      formattedDiffLines.push(chalk.dim(`    ${numStr} │ ${row.text}`));
+    }
+    lastIdx = idx;
+  }
+
+  if (formattedDiffLines.length === 0) {
+    formattedDiffLines.push(chalk.dim('    (No line differences detected)'));
+  }
+
+  const fullDiff = formattedDiffLines.join('\n');
+  const previewSlice = formattedDiffLines.slice(0, maxPreviewLines);
+  if (formattedDiffLines.length > maxPreviewLines) {
+    previewSlice.push(
+      chalk.gray(
+        `    ... (+${formattedDiffLines.length - maxPreviewLines} more diff lines — press [d] for full diff)`,
+      ),
+    );
+  }
+
+  return {
+    targetPath,
+    isNewFile: false,
+    previousContent,
+    newContent,
+    addedLines,
+    removedLines,
+    diffPreview: previewSlice.join('\n'),
+    fullDiff,
+  };
+}
+
+/**
  * Formats the summary of modified files in green using chalk.
  */
-export function formatModifiedFilesSummary(modifiedFiles: WriteFileResult[]): string {
-  if (modifiedFiles.length === 0) {
+export function formatModifiedFilesSummary(
+  modifiedFiles: WriteFileResult[],
+  rejectedFiles: string[] = [],
+): string {
+  const parts: string[] = [];
+
+  if (modifiedFiles.length > 0) {
+    const header = chalk.green.bold(`✔ Successfully modified ${modifiedFiles.length} file(s):`);
+    const lines = modifiedFiles.map((file) =>
+      chalk.green(`  • ${file.relativePath} (${file.bytesWritten} bytes)`),
+    );
+    parts.push([header, ...lines].join('\n'));
+  }
+
+  if (rejectedFiles.length > 0) {
+    const rejHeader = chalk.yellow(`⊘ Skipped ${rejectedFiles.length} file(s) (user declined):`);
+    const rejLines = rejectedFiles.map((file) => chalk.yellow(`  • ${file}`));
+    parts.push([rejHeader, ...rejLines].join('\n'));
+  }
+
+  if (parts.length === 0) {
     return chalk.yellow('No files were modified.');
   }
 
-  const header = chalk.green.bold(`✔ Successfully modified ${modifiedFiles.length} file(s):`);
-  const lines = modifiedFiles.map((file) =>
-    chalk.green(`  • ${file.relativePath} (${file.bytesWritten} bytes)`),
-  );
-
-  return [header, ...lines].join('\n');
+  return parts.join('\n');
 }
 
 /**
  * Safely applies the pure code extracted by `StreamParser` to disk using the `write_file` tool,
- * and outputs a green summary of all modified files.
+ * optionally requesting user approval before writing, and outputs a summary of modified files.
  */
 export async function executeParsedCode(
   parseResult: StreamParseResult,
@@ -148,9 +337,34 @@ export async function executeParsedCode(
   }
 
   const modifiedFiles: WriteFileResult[] = [];
+  const rejectedFiles: string[] = [];
+  let autoApproveRemaining = false;
 
   for (const [targetPath, codeChunks] of fileContentsMap.entries()) {
     const combinedCode = `${codeChunks.join('\n\n').replace(/\r?\n$/, '')}\n`;
+
+    if (options.confirmBeforeWrite && !autoApproveRemaining) {
+      let previousContent: string | null = null;
+      try {
+        previousContent = await read_file(targetPath, baseDir);
+      } catch {
+        previousContent = null;
+      }
+
+      const diffInfo = computeFileDiff(targetPath, previousContent, combinedCode);
+      const decision = await options.confirmBeforeWrite({
+        ...diffInfo,
+        baseDir,
+      });
+
+      if (decision === 'approve_all') {
+        autoApproveRemaining = true;
+      } else if (decision === false || decision === 'reject') {
+        rejectedFiles.push(targetPath);
+        continue;
+      }
+    }
+
     if (options.onBeforeWrite) {
       await options.onBeforeWrite(targetPath, baseDir);
     }
@@ -158,14 +372,18 @@ export async function executeParsedCode(
     modifiedFiles.push(writeResult);
   }
 
-  const formattedSummary = formatModifiedFilesSummary(modifiedFiles);
+  const formattedSummary = formatModifiedFilesSummary(modifiedFiles, rejectedFiles);
   if (logSummary) {
     log(formattedSummary);
   }
 
+  const allRejected = modifiedFiles.length === 0 && rejectedFiles.length > 0;
+
   return {
     modifiedFiles,
-    skipped: false,
+    rejectedFiles,
+    skipped: allRejected,
+    skippedReason: allRejected ? 'user_rejected' : undefined,
     formattedSummary,
   };
 }

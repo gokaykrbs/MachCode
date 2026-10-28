@@ -13,7 +13,12 @@ import {
   VERIFIED_WEAK_POOL_MODELS,
   type AutoRouteResult,
 } from './engine/autoRouter.js';
-import { executeParsedCode, type ExecutionSummary } from './engine/executor.js';
+import {
+  executeParsedCode,
+  type ConfirmWriteDecision,
+  type ExecutionSummary,
+  type ProposedFileChange,
+} from './engine/executor.js';
 import {
   DEFAULT_HANDOFF_WINDOW_MS,
   raceModels,
@@ -88,6 +93,17 @@ export interface MachCodeRunOptions {
    * Callback invoked before modifying a file (used for /undo snapshotting).
    */
   onBeforeWrite?: (targetPath: string, baseDir: string) => Promise<void> | void;
+  /**
+   * Optional confirmation callback invoked before writing each modified file (Antigravity / Claude Code style).
+   */
+  confirmBeforeWrite?: (
+    change: ProposedFileChange,
+  ) => Promise<ConfirmWriteDecision> | ConfirmWriteDecision;
+  /**
+   * When false, prompts the user for interactive confirmation ([Y]es / [n]o / [a]ll / [d]iff) before writing files.
+   * When true, writes files automatically without prompting.
+   */
+  autoApprove?: boolean;
   /**
    * Optional custom fetch implementation for end-to-end testing.
    */
@@ -391,6 +407,115 @@ async function promptUserInYellow(question: string): Promise<string> {
 }
 
 /**
+ * Prompts the user for interactive approval before modifying or creating a file (Antigravity / Claude Code style).
+ * Displays a diff preview card and supports:
+ * - [Y]es / Enter / evet: Approve and apply this file change
+ * - [n]o / hayır: Reject and skip this file change
+ * - [a]ll / hepsi: Approve this change and auto-approve remaining changes
+ * - [d]iff / fark: Display the full colorized diff and re-prompt
+ */
+export async function promptFileChangeApproval(
+  change: ProposedFileChange,
+  existingRl?: readline.Interface,
+  onAutoApproveAll?: () => void,
+): Promise<ConfirmWriteDecision> {
+  const actionBadge = change.isNewFile
+    ? chalk.bgGreen.black.bold(' NEW FILE ')
+    : chalk.bgCyan.black.bold(' MODIFY ');
+  const statsBadge = change.isNewFile
+    ? chalk.green(`+${change.addedLines} lines`)
+    : `${chalk.green(`+${change.addedLines}`)} ${chalk.red(`-${change.removedLines}`)} lines`;
+
+  console.log(
+    '\n' +
+      chalk.cyan('  ╭─ ') +
+      chalk.white.bold('🛡️  Approval Required before File Write') +
+      chalk.cyan(' ───────────────────') +
+      '\n' +
+      chalk.cyan('  │ ') +
+      `${actionBadge} ${chalk.white.bold(change.targetPath)} ${chalk.gray(`(${statsBadge})`)}` +
+      '\n' +
+      chalk.cyan('  ╰──────────────────────────────────────────────────────────────'),
+  );
+  console.log(change.diffPreview + '\n');
+
+  const ownsRl = !existingRl;
+  const rl = existingRl ?? readline.createInterface({ input, output });
+  if (existingRl) {
+    existingRl.resume?.();
+  }
+
+  try {
+    while (true) {
+      const promptText =
+        chalk.cyan.bold('  ? ') +
+        chalk.white.bold(`Apply changes to ${change.targetPath}? `) +
+        chalk.gray('[') +
+        chalk.green.bold('Y') +
+        chalk.gray('es / ') +
+        chalk.red.bold('n') +
+        chalk.gray('o / ') +
+        chalk.magenta.bold('a') +
+        chalk.gray('ll / ') +
+        chalk.yellow.bold('d') +
+        chalk.gray('iff]: ');
+
+      const rawAnswer = await rl.question(promptText);
+      const ans = rawAnswer.trim().toLowerCase();
+
+      if (ans === '' || ans === 'y' || ans === 'yes' || ans === 'e' || ans === 'evet') {
+        return 'approve';
+      }
+      if (
+        ans === 'n' ||
+        ans === 'no' ||
+        ans === 'h' ||
+        ans === 'hayir' ||
+        ans === 'hayır' ||
+        ans === 'iptal'
+      ) {
+        return 'reject';
+      }
+      if (
+        ans === 'a' ||
+        ans === 'all' ||
+        ans === 'always' ||
+        ans === 'hepsi' ||
+        ans === 'tumu' ||
+        ans === 'tümü'
+      ) {
+        if (onAutoApproveAll) {
+          onAutoApproveAll();
+        }
+        return 'approve_all';
+      }
+      if (ans === 'd' || ans === 'diff' || ans === 'fark') {
+        console.log(
+          '\n' +
+            chalk.cyan.bold(`  ─── Full Diff: ${change.targetPath} ───`) +
+            '\n' +
+            change.fullDiff +
+            '\n',
+        );
+        continue;
+      }
+
+      console.log(
+        chalk.yellow(
+          '    Please enter Y (approve), n (reject), a (approve all), or d (show full diff).',
+        ),
+      );
+    }
+  } finally {
+    if (ownsRl) {
+      rl.close();
+    } else {
+      existingRl?.pause?.();
+    }
+  }
+}
+
+/**
  * Executes the full MachCode end-to-end flow:
  * 1. Loads config & workspace context (via `read_file` and automatic NVIDIA skills integration).
  * 2. Builds the Sniper system prompt.
@@ -649,11 +774,18 @@ export async function runMachCode(
     const fallbackTarget =
       options.targetFilePath ?? (isPureCodeOutput ? inferredTargetFile : undefined);
 
+    const effectiveConfirm =
+      options.confirmBeforeWrite ??
+      (options.autoApprove === false
+        ? (change: ProposedFileChange) => promptFileChangeApproval(change, options.rl)
+        : undefined);
+
     const executionSummary = await executeParsedCode(raceResult.parseResult, {
       targetFilePath: fallbackTarget,
       baseDir,
       logSummary: writeToStdout,
       onBeforeWrite: options.onBeforeWrite,
+      confirmBeforeWrite: effectiveConfirm,
     });
 
     const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -696,6 +828,7 @@ export interface ReplBannerOptions {
   lightModel?: string;
   heavyModel?: string;
   strongPool?: string[];
+  autoApprove?: boolean;
 }
 
 /**
@@ -707,6 +840,9 @@ export function printReplBanner(options: ReplBannerOptions = {}): void {
   const sessionId = options.sessionId ?? `sess_${Math.random().toString(36).substring(2, 10)}`;
   const poolModels = options.strongPool ?? [...VERIFIED_STRONG_POOL_MODELS];
   const uniqueProviders = Array.from(new Set(poolModels.map((m) => m.split('/')[0] || m)));
+  const approvalBadge = options.autoApprove
+    ? chalk.yellow('Auto-Approve')
+    : chalk.green('Ask before write');
 
   const cols = process.stdout.columns || 80;
   const maxDirLen = Math.max(16, cols - 28);
@@ -720,9 +856,9 @@ export function printReplBanner(options: ReplBannerOptions = {}): void {
     `${border('  ╭───────────╮')}  ${chalk.cyan.bold('⚡ MachCode')} ${chalk.gray('v0.1.0')}`,
     `${border('  │  ')}${chalk.cyanBright.bold('██▄ ▄██')}${border('  │')}  ${chalk.dim('Engine:')}   ${chalk.white('Multi-Model AI Coding & Q&A CLI')}`,
     `${border('  │  ')}${chalk.magentaBright.bold('███████')}${border('  │')}  ${chalk.dim('Models:')}   ${chalk.magenta.bold(`${poolModels.length} AI models racing`)} ${chalk.gray(`(${uniqueProviders.length} providers)`)}`,
-    `${border('  │  ')}${chalk.magenta.bold('██ ▀ ██')}${border('  │')}  ${chalk.dim('Session:')}  ${chalk.white(sessionId)} ${chalk.gray('• FS, Git, NIM')}`,
+    `${border('  │  ')}${chalk.magenta.bold('██ ▀ ██')}${border('  │')}  ${chalk.dim('Session:')}  ${chalk.white(sessionId)} ${chalk.gray('•')} ${approvalBadge}`,
     `${border('  │  ')}${chalk.blueBright.bold('██   ██')}${border('  │')}  ${chalk.dim('Path:')}     ${chalk.white(displayDir)}`,
-    `${border('  ╰───────────╯')}  ${chalk.dim('Commands:')} ${chalk.yellow('/ask')} ${chalk.dim('•')} ${chalk.yellow('/race')} ${chalk.dim('•')} ${chalk.yellow('/plan')} ${chalk.dim('•')} ${chalk.yellow('/help')} ${chalk.dim('•')} ${chalk.yellow('/exit')}`,
+    `${border('  ╰───────────╯')}  ${chalk.dim('Commands:')} ${chalk.yellow('/ask')} ${chalk.dim('•')} ${chalk.yellow('/approve')} ${chalk.dim('•')} ${chalk.yellow('/race')} ${chalk.dim('•')} ${chalk.yellow('/plan')} ${chalk.dim('•')} ${chalk.yellow('/help')} ${chalk.dim('•')} ${chalk.yellow('/exit')}`,
   ];
 
   console.log('\n' + rows.join('\n') + '\n');
@@ -767,6 +903,8 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
 
   const handoffWindowMs = options.handoffWindowMs ?? DEFAULT_HANDOFF_WINDOW_MS;
   const sessionId = `mc_${Math.random().toString(36).substring(2, 10)}`;
+  // Interactive terminal sessions default to Ask-Before-Write (autoApprove: false) unless overridden
+  const initialAutoApprove = options.autoApprove ?? !(options.writeToStdout ?? true);
 
   // Display startup dashboard
   if (options.writeToStdout ?? true) {
@@ -774,6 +912,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       cwd: baseDir,
       sessionId,
       strongPool,
+      autoApprove: initialAutoApprove,
     });
   }
 
@@ -815,6 +954,16 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         handoffWindowMs: runOpts?.handoffWindowMs ?? handoffWindowMs,
         history: sessionHistory,
         addedFiles: addedContextFiles,
+        autoApprove: runOpts?.autoApprove ?? commandContext.autoApprove,
+        confirmBeforeWrite:
+          runOpts?.confirmBeforeWrite ??
+          options.confirmBeforeWrite ??
+          (!commandContext.autoApprove
+            ? (change: ProposedFileChange) =>
+                promptFileChangeApproval(change, rl, () => {
+                  commandContext.autoApprove = true;
+                })
+            : undefined),
         onBeforeWrite: async (targetPath: string, workspaceDir: string) => {
           try {
             const existing = await read_file(targetPath, workspaceDir);
@@ -898,6 +1047,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     rl,
     shouldExit: false,
     sessionId,
+    autoApprove: initialAutoApprove,
     runMachCode: executeInstruction,
   };
 

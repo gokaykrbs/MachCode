@@ -177,4 +177,73 @@ describe('Executor (src/engine/executor.ts)', () => {
       await fs.rm(tmpWorkspace, { recursive: true, force: true });
     }
   });
+
+  it('prompts for confirmation via confirmBeforeWrite, computes diff stats, and respects approve / reject / approve_all decisions', async () => {
+    const tmpWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), 'machcode-exec-confirm-'));
+
+    try {
+      await write_file('src/existing.ts', 'export const a = 1;\n', tmpWorkspace);
+
+      const parser = new StreamParser({ debugLogPath: null });
+      parser.feed(
+        [
+          '```typescript',
+          '// file: src/existing.ts',
+          'export const a = 2;',
+          'export const b = 3;',
+          '```',
+          '```typescript',
+          '// file: src/rejected.ts',
+          'export const nope = true;',
+          '```',
+        ].join('\n'),
+      );
+      const parseResult = await parser.finalize();
+
+      const seenChanges: Array<{
+        targetPath: string;
+        isNewFile: boolean;
+        addedLines: number;
+        removedLines: number;
+      }> = [];
+
+      const summary = await executeParsedCode(parseResult, {
+        baseDir: tmpWorkspace,
+        logSummary: false,
+        confirmBeforeWrite: async (change) => {
+          seenChanges.push({
+            targetPath: change.targetPath,
+            isNewFile: change.isNewFile,
+            addedLines: change.addedLines,
+            removedLines: change.removedLines,
+          });
+          if (change.targetPath === 'src/existing.ts') {
+            return 'approve';
+          }
+          return 'reject';
+        },
+      });
+
+      assert.equal(seenChanges.length, 2);
+      assert.equal(seenChanges[0]?.targetPath, 'src/existing.ts');
+      assert.equal(seenChanges[0]?.isNewFile, false);
+      assert.ok((seenChanges[0]?.addedLines ?? 0) >= 1);
+      assert.equal(seenChanges[1]?.targetPath, 'src/rejected.ts');
+      assert.equal(seenChanges[1]?.isNewFile, true);
+
+      assert.equal(summary.modifiedFiles.length, 1);
+      assert.equal(summary.rejectedFiles?.length, 1);
+      assert.equal(summary.rejectedFiles?.[0], 'src/rejected.ts');
+      assert.equal(summary.skipped, false);
+
+      const updatedExisting = await read_file('src/existing.ts', tmpWorkspace);
+      assert.ok(updatedExisting.includes('export const b = 3;'));
+
+      await assert.rejects(async () => {
+        await read_file('src/rejected.ts', tmpWorkspace);
+      });
+    } finally {
+      await fs.rm(tmpWorkspace, { recursive: true, force: true });
+    }
+  });
 });
