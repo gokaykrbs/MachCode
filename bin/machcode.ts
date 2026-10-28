@@ -25,10 +25,8 @@ program
     'Streaming handoff window in milliseconds',
     String(DEFAULT_HANDOFF_WINDOW_MS),
   )
-  .option(
-    '-y, --yes, --auto-approve',
-    'Automatically approve and apply file changes without prompting',
-  )
+  .option('-y, --yes', 'Automatically approve and apply file changes without prompting')
+  .option('--auto-approve', 'Alias of --yes: apply file changes without prompting')
   .argument('[prompt...]', 'Optional coding instruction to launch in interactive REPL session')
   .action(
     async (
