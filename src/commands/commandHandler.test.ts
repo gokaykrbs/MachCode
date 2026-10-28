@@ -281,6 +281,28 @@ describe('Slash Command Registry & Command Handler', () => {
     assert.equal(context.autoApprove, true);
   });
 
+  it('/skills lists official NVIDIA skills and /skill loads skill into session context', async () => {
+    const registry = createDefaultCommandRegistry();
+    const { context, executedPrompts } = createMockContext();
+
+    // 1. /skills without args
+    const handledList = await registry.dispatch('/skills', context);
+    assert.equal(handledList, true);
+
+    // 2. /skill cuopt with a task executes with enriched prompt
+    const handledTask = await registry.dispatch('/skill cuopt Solve vehicle routing problem', context);
+    assert.equal(handledTask, true);
+    assert.equal(executedPrompts.length, 1);
+    assert.ok(executedPrompts[0].prompt.includes('[ACTIVE NVIDIA SKILL: cuOpt'));
+    assert.ok(executedPrompts[0].prompt.includes('Solve vehicle routing problem'));
+
+    // 3. /cudf shortcut
+    const handledShortcut = await registry.dispatch('/cudf Filter dataframe by timestamp', context);
+    assert.equal(handledShortcut, true);
+    assert.equal(executedPrompts.length, 2);
+    assert.ok(executedPrompts[1].prompt.includes('[ACTIVE NVIDIA SKILL: cuDF'));
+  });
+
   it('/exit and its aliases set shouldExit to true and close readline', async () => {
     const registry = createDefaultCommandRegistry();
     const { context, closed } = createMockContext();

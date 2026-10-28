@@ -2,6 +2,7 @@ import { contextCommands } from './context.js';
 import { executionCommands } from './execution.js';
 import { gitCommands } from './git.js';
 import { systemCommands } from './system.js';
+import { skillsCommands } from './skills.js';
 import { CommandRegistry } from './commandHandler.js';
 import type { SlashCommand } from './types.js';
 
@@ -11,10 +12,12 @@ export * from './context.js';
 export * from './execution.js';
 export * from './git.js';
 export * from './system.js';
+export * from './skills.js';
 
 export const allCommands: SlashCommand[] = [
   ...contextCommands,
   ...executionCommands,
+  ...skillsCommands,
   ...gitCommands,
   ...systemCommands,
 ];

@@ -38,6 +38,11 @@ import {
   type FileSnapshot,
   type TokenStats,
 } from './commands/index.js';
+import {
+  buildAutocompleteItems,
+  promptWithSuggestions,
+  type AutocompleteItem,
+} from './ui/autocomplete.js';
 
 export interface SessionMessage {
   role: 'user' | 'assistant';
@@ -1170,11 +1175,22 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
 
   // Interactive REPL prompt loop: exact format `[machcode✨] > `
   const promptLabel = `${chalk.cyan.bold('[machcode✨]')} ${chalk.yellow('>')} `;
+  const autocompleteItems = buildAutocompleteItems(commandRegistry);
+  const promptHistory: string[] = [];
 
   while (!commandContext.shouldExit) {
     let userInput = '';
     try {
-      userInput = await rl.question(promptLabel);
+      if (process.stdin.isTTY && !options.rlInterface) {
+        userInput = await promptWithSuggestions({
+          promptText: promptLabel,
+          items: autocompleteItems,
+          history: promptHistory,
+          rlFallback: rl,
+        });
+      } else {
+        userInput = await rl.question(promptLabel);
+      }
     } catch {
       break;
     }
@@ -1184,6 +1200,8 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     if (trimmed.length === 0) {
       continue;
     }
+
+    promptHistory.push(trimmed);
 
     rl?.pause?.();
 
@@ -1222,3 +1240,4 @@ export * from './engine/executor.js';
 export * from './tools/index.js';
 export * from './tools/nvidiaSkills.js';
 export * from './commands/index.js';
+export * from './ui/autocomplete.js';

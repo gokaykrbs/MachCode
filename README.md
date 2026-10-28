@@ -76,7 +76,9 @@ MachCode features a compact **13-column geometric block logo** and dynamic viewp
 ## ✨ Key Features
 
 - 🏁 **57+ Model Parallel Racing Engine:** Simultaneously races all usable generative models across 21+ AI providers in your NVIDIA NIM account and locks onto the fastest responder.
+- 💡 **Antigravity-Style Interactive `/` Autocomplete & Skills Box:** Typing `/` immediately displays a real-time filtered dropdown card below the prompt showing all slash commands and official NVIDIA Agent Skills (`/skill cuopt`, `/cudf`, etc.) with `↑/↓` arrow navigation and `Tab` completion.
 - 🛡️ **Antigravity / Claude Code Style Interactive Approval:** Shows a colorized line-diff preview card before creating or modifying any file and prompts `[Y]es / [n]o / [a]ll / [d]iff` (can be toggled anytime with `/approve` or `-y / --auto-approve`).
+- 🧩 **Native NVIDIA Agent Skills (`/skills`, `/skill <name>`):** Direct integration with official [`NVIDIA/skills`](https://github.com/NVIDIA/skills) catalog (cuDF, cuOpt, CUDA-Q, DeepStream, DOCA, DALI, BioNeMo, Dynamo) with instant shortcuts (`/cuopt`, `/cudf`, etc.).
 - 💬 **Antigravity / Claude Code Grade Q&A + Coding:** Seamlessly chat, ask questions in any language, explain codebases, or trigger autonomous multi-file edits in the same session.
 - 📊 **Live Race Telemetry & `/race` Benchmark:** Every response displays the winning model, provider count, and exact first-token latency (`🏁 Race Winner`), plus a dedicated `/race` command for live parallel speed tests.
 - 🤖 **Zero-Config Autonomous AutoRouter:** Dynamically discovers active NVIDIA NIM models in the background and populates `strongPool` and `weakPool` in `~/.machcode/config.json`.
@@ -176,13 +178,17 @@ MachCode routes any input starting with `/` to the **Command Registry**.
 
 ### ⚡ Execution & Modes
 
-| Command   | Usage              | Aliases                     | Description                                                                      |
-| :-------- | :----------------- | :-------------------------- | :------------------------------------------------------------------------------- |
-| `/ask`    | `/ask <question>`  | `/chat`, `/explain`, `/qna` | Ask a question, explain code, or chat in read-only mode without modifying files. |
-| `/plan`   | `/plan <prompt>`   | —                           | Generate an architectural implementation plan without modifying any files.       |
-| `/heavy`  | `/heavy <prompt>`  | `/deep`, `/hw`              | Bypass racing and execute using exclusively the Heavyweight model.               |
-| `/fast`   | `/fast <prompt>`   | `/light`, `/quick`          | Bypass racing and execute using exclusively the Lightweight model.               |
-| `/review` | `/review <file>`   | `/audit`, `/inspect`        | Run an in-depth security, bug, and quality review on a file without editing it.  |
+| Command   | Usage                 | Aliases                     | Description                                                                      |
+| :-------- | :-------------------- | :-------------------------- | :------------------------------------------------------------------------------- |
+| `/ask`    | `/ask <question>`     | `/chat`, `/explain`, `/qna` | Ask a question, explain code, or chat in read-only mode without modifying files. |
+| `/skills` | `/skills [name] [task]`| `/skill`, `/nvskills`      | List or execute tasks with official NVIDIA Agent Skills (cuOpt, cuDF, CUDA-Q...).|
+| `/cuopt`  | `/cuopt [task]`       | —                           | cuOpt shortcut: GPU vehicle routing & linear/mixed-integer programming.         |
+| `/cudf`   | `/cudf [task]`        | —                           | cuDF shortcut: GPU DataFrames, pandas acceleration & GPU ETL.                    |
+| `/cudaq`  | `/cudaq [task]`       | —                           | CUDA-Q shortcut: Quantum-classical hybrid programming.                           |
+| `/plan`   | `/plan <prompt>`      | —                           | Generate an architectural implementation plan without modifying any files.       |
+| `/heavy`  | `/heavy <prompt>`     | `/deep`, `/hw`              | Bypass racing and execute using exclusively the Heavyweight model.               |
+| `/fast`   | `/fast <prompt>`      | `/light`, `/quick`          | Bypass racing and execute using exclusively the Lightweight model.               |
+| `/review` | `/review <file>`      | `/audit`, `/inspect`        | Run an in-depth security, bug, and quality review on a file without editing it.  |
 
 ### 🛡️ Safety & Git
 
