@@ -7,7 +7,12 @@ import ora from 'ora';
 import figlet from 'figlet';
 import boxen from 'boxen';
 import { autoAssignAndSaveModels, ensureConfig, loadConfig } from './config/index.js';
-import { autoRouteModels, type AutoRouteResult } from './engine/autoRouter.js';
+import {
+  autoRouteModels,
+  VERIFIED_STRONG_POOL_MODELS,
+  VERIFIED_WEAK_POOL_MODELS,
+  type AutoRouteResult,
+} from './engine/autoRouter.js';
 import { executeParsedCode, type ExecutionSummary } from './engine/executor.js';
 import {
   DEFAULT_HANDOFF_WINDOW_MS,
@@ -51,6 +56,14 @@ export interface MachCodeRunOptions {
    * Heavyweight deep reasoning/coding model ID on NVIDIA NIM.
    */
   heavyModel?: string;
+  /**
+   * Optional multi-model StrongPool array to race in parallel.
+   */
+  strongPool?: string[];
+  /**
+   * Optional multi-model WeakPool array for fast parallel fallback.
+   */
+  weakPool?: string[];
   /**
    * Handoff window in milliseconds. Defaults to 3000 (3 seconds).
    */
@@ -267,6 +280,24 @@ export async function gatherWorkspaceContext(
     }
   }
 
+  // If no explicit file was matched (e.g., general project question or architectural chat),
+  // automatically load package.json as lightweight project overview context
+  // without setting inferredTargetFile so the assistant can answer project questions accurately and fast.
+  if (fileContentsSections.length === 0 && workspaceFiles.length > 0) {
+    const overviewCandidates = ['package.json'];
+    const foundOverview = workspaceFiles.filter((f) => overviewCandidates.includes(f)).slice(0, 1);
+    for (const relFile of foundOverview) {
+      try {
+        const content = await read_file(relFile, baseDir);
+        const clipped =
+          content.length > 1500 ? `${content.slice(0, 1500)}\n... (truncated)` : content;
+        fileContentsSections.push(`### File: \`${relFile}\`\n\`\`\`\n${clipped}\n\`\`\``);
+      } catch {
+        // Ignore unreadable overview files
+      }
+    }
+  }
+
   // Also check if the prompt mentions an explicit filename to create (e.g., "create src/auth.ts")
   if (!inferredTargetFile) {
     const fileMatch =
@@ -378,6 +409,29 @@ export async function runMachCode(
   });
   let lightModel = options.lightModel ?? config.lightModel;
   let heavyModel = options.heavyModel ?? config.heavyModel;
+
+  // Determine the active multi-model racing pools:
+  // If options.strongPool is explicitly passed, use it.
+  // Else if caller explicitly forced a single heavyModel (e.g. /heavy, /fast, or custom single-model test), use [options.heavyModel].
+  // Otherwise, race the full multi-model StrongPool from config / verified NIM models!
+  let activeStrongPool: string[] =
+    options.strongPool && options.strongPool.length > 0
+      ? [...options.strongPool]
+      : options.heavyModel
+        ? [options.heavyModel]
+        : config.strongPool && config.strongPool.length > 0
+          ? [...config.strongPool]
+          : [...VERIFIED_STRONG_POOL_MODELS];
+
+  let activeWeakPool: string[] =
+    options.weakPool && options.weakPool.length > 0
+      ? [...options.weakPool]
+      : options.lightModel
+        ? [options.lightModel]
+        : config.weakPool && config.weakPool.length > 0
+          ? [...config.weakPool]
+          : [...VERIFIED_WEAK_POOL_MODELS];
+
   const writeToStdout = options.writeToStdout ?? true;
   const maxQuestionRounds = options.maxQuestionRounds ?? 3;
 
@@ -385,11 +439,16 @@ export async function runMachCode(
   const toolsLoaded = await getIntegratedTools({ fetchImpl: options.fetchImpl });
 
   if (writeToStdout) {
+    const poolCount = activeStrongPool.length;
     console.log(
       '\n' +
         chalk.bgCyan.black.bold(' MACHCODE ') +
         ' ' +
-        chalk.cyan.bold('Tiered Priority Fallback Engine'),
+        chalk.cyan.bold(
+          poolCount > 1
+            ? `Multi-Model Parallel Racing Engine (${poolCount} AI models competing)`
+            : 'Tiered Priority Fallback Engine',
+        ),
     );
   }
 
@@ -410,15 +469,32 @@ export async function runMachCode(
 
     options.rl?.pause?.();
 
+    const uniqueProviders = Array.from(
+      new Set(activeStrongPool.map((m) => m.split('/')[0] || m)),
+    );
+    const providerList =
+      uniqueProviders.length > 5
+        ? `${uniqueProviders.slice(0, 5).join(', ')} +${uniqueProviders.length - 5} more`
+        : uniqueProviders.join(', ');
+    const spinnerText =
+      activeStrongPool.length > 1
+        ? `Racing ${activeStrongPool.length} models in parallel (${providerList})...`
+        : `Connecting to model (${activeStrongPool[0] ?? heavyModel})...`;
+
     const spinner = writeToStdout
       ? ora({
-          text: chalk.cyan.bold('Connecting to model...'),
+          text: chalk.cyan.bold(spinnerText),
           color: 'cyan',
           stream: process.stdout,
         }).start()
       : null;
 
+    let spinnerStopped = false;
     const stopAndClearSpinner = () => {
+      if (spinnerStopped) {
+        return;
+      }
+      spinnerStopped = true;
       if (spinner) {
         if (spinner.isSpinning) {
           spinner.stop();
@@ -438,19 +514,37 @@ export async function runMachCode(
         apiKey,
         systemPrompt,
         tools: toolsLoaded,
+        strongPool: activeStrongPool,
+        weakPool: activeWeakPool,
         handoffWindowMs: options.handoffWindowMs,
         timeoutMs: options.timeoutMs,
         writeToStdout,
         fetchImpl: options.fetchImpl,
         promptOnQuestion: false,
         messages: options.history?.map((m) => ({ role: m.role, content: m.content })),
-        onFirstToken: (model, tier) => {
+        onFirstToken: (model, tier, details) => {
           stopAndClearSpinner();
           if (writeToStdout) {
+            const racedCount = details?.racedModels?.length ?? activeStrongPool.length;
+            const latencyText = details?.latencyMs
+              ? ` in ${(details.latencyMs / 1000).toFixed(2)}s`
+              : '';
+            const raceInfo =
+              racedCount > 1
+                ? chalk.gray(` [won race against ${racedCount} models${latencyText}]`)
+                : chalk.gray(latencyText);
             if (tier === 'strong') {
-              console.log(chalk.magenta.bold(`⚡ Streaming from strong model (${model})...\n`));
+              console.log(
+                chalk.magenta.bold(`⚡ Streaming from winning model (${model})`) +
+                  raceInfo +
+                  '\n',
+              );
             } else {
-              console.log(chalk.blue.bold(`⚡ Streaming from fallback model (${model})...\n`));
+              console.log(
+                chalk.blue.bold(`⚡ Streaming from fallback model (${model})`) +
+                  raceInfo +
+                  '\n',
+              );
             }
           }
         },
@@ -458,7 +552,7 @@ export async function runMachCode(
           if (writeToStdout) {
             console.log(
               chalk.yellow.dim(
-                `\n⚠️  Strong model failed or timed out. Falling back to fast model...\n`,
+                `\n⚠️  Strong pool failed or timed out. Racing fallback models...\n`,
               ),
             );
           }
@@ -500,6 +594,14 @@ export async function runMachCode(
         });
         lightModel = newModels.lightModel;
         heavyModel = newModels.heavyModel;
+        activeStrongPool =
+          newModels.strongPool && newModels.strongPool.length > 0
+            ? newModels.strongPool
+            : [newModels.heavyModel];
+        activeWeakPool =
+          newModels.weakPool && newModels.weakPool.length > 0
+            ? newModels.weakPool
+            : [newModels.lightModel];
         continue;
       }
 
@@ -537,7 +639,16 @@ export async function runMachCode(
       console.log('');
     }
 
-    const fallbackTarget = options.targetFilePath ?? inferredTargetFile ?? 'machcode.output.ts';
+    // Only apply fallbackTarget when explicit targetFilePath was given, OR when the model emitted pure code blocks
+    // (prevents overwriting a file when the user asked a conversational question that happens to include a short example snippet)
+    const strippedProse = raceResult.parseResult.visibleOutput
+      .replace(/```[\s\S]*?```/g, '')
+      .trim();
+    const isPureCodeOutput =
+      raceResult.parseResult.codeBlocks.length > 0 && strippedProse.length === 0;
+    const fallbackTarget =
+      options.targetFilePath ?? (isPureCodeOutput ? inferredTargetFile : undefined);
+
     const executionSummary = await executeParsedCode(raceResult.parseResult, {
       targetFilePath: fallbackTarget,
       baseDir,
@@ -546,11 +657,15 @@ export async function runMachCode(
     });
 
     const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(2);
-    if (writeToStdout && !executionSummary.skipped) {
+    if (writeToStdout) {
+      const racedBadge =
+        raceResult.racedModels && raceResult.racedModels.length > 1
+          ? ` • raced ${raceResult.racedModels.length} models`
+          : '';
       console.log(
         chalk.green.bold(`\n✨ Done in ${elapsedSec}s `) +
           chalk.gray(
-            `via ${raceResult.winnerModel} [${raceResult.winnerTier || raceResult.winnerRole}]`,
+            `via ${raceResult.winnerModel} [${raceResult.winnerTier || raceResult.winnerRole}${racedBadge}]`,
           ),
       );
     }
@@ -580,36 +695,37 @@ export interface ReplBannerOptions {
   sessionId?: string;
   lightModel?: string;
   heavyModel?: string;
+  strongPool?: string[];
 }
 
 /**
- * Displays the MachCode ASCII branding banner and Welcome/Status Dashboard.
+ * Displays the compact, responsive Antigravity-style MachCode logo and Status Dashboard.
+ * Never distorts or wraps awkwardly when the terminal window is resized or narrowed.
  */
 export function printReplBanner(options: ReplBannerOptions = {}): void {
-  const ascii = figlet.textSync('MACHCODE CLI', {
-    font: 'Standard',
-    horizontalLayout: 'fitted',
-  });
-  console.log(`\n${chalk.white(ascii)}\n`);
-
   const currentDir = options.cwd ?? process.cwd();
   const sessionId = options.sessionId ?? `sess_${Math.random().toString(36).substring(2, 10)}`;
+  const poolModels = options.strongPool ?? [...VERIFIED_STRONG_POOL_MODELS];
+  const uniqueProviders = Array.from(new Set(poolModels.map((m) => m.split('/')[0] || m)));
 
-  const content = [
-    `${chalk.dim('Directory:')}      ${chalk.white(currentDir)}`,
-    `${chalk.dim('Active Session:')} ${chalk.white(sessionId)}`,
-    `${chalk.dim('Skills:')}         ${chalk.white('FileSystem, Terminal, NVIDIA NIM')}`,
-  ].join('\n');
+  const cols = process.stdout.columns || 80;
+  const maxDirLen = Math.max(16, cols - 28);
+  const displayDir =
+    currentDir.length > maxDirLen
+      ? `...${currentDir.slice(-(maxDirLen - 3))}`
+      : currentDir;
 
-  const dashboard = boxen(content, {
-    padding: 1,
-    margin: { top: 0, bottom: 1, left: 0, right: 0 },
-    borderColor: 'gray',
-    borderStyle: 'round',
-  });
+  const border = chalk.cyan;
+  const rows = [
+    `${border('  ╭───────────╮')}  ${chalk.cyan.bold('⚡ MachCode')} ${chalk.gray('v0.1.0')}`,
+    `${border('  │  ')}${chalk.cyanBright.bold('██▄ ▄██')}${border('  │')}  ${chalk.dim('Engine:')}   ${chalk.white('Multi-Model AI Coding & Q&A CLI')}`,
+    `${border('  │  ')}${chalk.magentaBright.bold('███████')}${border('  │')}  ${chalk.dim('Models:')}   ${chalk.magenta.bold(`${poolModels.length} AI models racing`)} ${chalk.gray(`(${uniqueProviders.length} providers)`)}`,
+    `${border('  │  ')}${chalk.magenta.bold('██ ▀ ██')}${border('  │')}  ${chalk.dim('Session:')}  ${chalk.white(sessionId)} ${chalk.gray('• FS, Git, NIM')}`,
+    `${border('  │  ')}${chalk.blueBright.bold('██   ██')}${border('  │')}  ${chalk.dim('Path:')}     ${chalk.white(displayDir)}`,
+    `${border('  ╰───────────╯')}  ${chalk.dim('Commands:')} ${chalk.yellow('/ask')} ${chalk.dim('•')} ${chalk.yellow('/race')} ${chalk.dim('•')} ${chalk.yellow('/plan')} ${chalk.dim('•')} ${chalk.yellow('/help')} ${chalk.dim('•')} ${chalk.yellow('/exit')}`,
+  ];
 
-  console.log(dashboard);
-  console.log(chalk.dim('Type your instruction, /help for commands, /exit to quit.\n'));
+  console.log('\n' + rows.join('\n') + '\n');
 }
 
 /**
@@ -618,7 +734,7 @@ export function printReplBanner(options: ReplBannerOptions = {}): void {
  * 2. Displays minimalist status dashboard and prompt: `[machcode✨] > `
  * 3. Keeps an in-memory session history array for multi-turn context retention.
  * 4. Routes slash commands starting with `/` dynamically through the CommandRegistry.
- * 5. Passes non-slash user instructions to the Streaming Handoff Racing Engine.
+ * 5. Passes non-slash user instructions to the Multi-Model Parallel Racing Engine.
  * 6. Records pre-modification file snapshots for `/undo` revert capabilities.
  * 7. Gracefully handles 410/404 model errors and triggers dynamic model re-selection.
  * 8. Never exits the process on completion or errors — always presents the prompt again.
@@ -632,6 +748,23 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const baseDir = options.baseDir ?? process.cwd();
   let lightModel = options.lightModel ?? config.lightModel;
   let heavyModel = options.heavyModel ?? config.heavyModel;
+  let strongPool: string[] =
+    options.strongPool && options.strongPool.length > 0
+      ? [...options.strongPool]
+      : options.heavyModel
+        ? [options.heavyModel]
+        : config.strongPool && config.strongPool.length > 0
+          ? [...config.strongPool]
+          : [...VERIFIED_STRONG_POOL_MODELS];
+  let weakPool: string[] =
+    options.weakPool && options.weakPool.length > 0
+      ? [...options.weakPool]
+      : options.lightModel
+        ? [options.lightModel]
+        : config.weakPool && config.weakPool.length > 0
+          ? [...config.weakPool]
+          : [...VERIFIED_WEAK_POOL_MODELS];
+
   const handoffWindowMs = options.handoffWindowMs ?? DEFAULT_HANDOFF_WINDOW_MS;
   const sessionId = `mc_${Math.random().toString(36).substring(2, 10)}`;
 
@@ -640,6 +773,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     printReplBanner({
       cwd: baseDir,
       sessionId,
+      strongPool,
     });
   }
 
@@ -674,8 +808,10 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         ...runOpts,
         rl,
         baseDir,
-        lightModel: runOpts?.lightModel ?? lightModel,
-        heavyModel: runOpts?.heavyModel ?? heavyModel,
+        lightModel: runOpts?.lightModel ?? commandContext.lightModel ?? lightModel,
+        heavyModel: runOpts?.heavyModel ?? commandContext.heavyModel ?? heavyModel,
+        strongPool: runOpts?.strongPool ?? commandContext.strongPool ?? strongPool,
+        weakPool: runOpts?.weakPool ?? commandContext.weakPool ?? weakPool,
         handoffWindowMs: runOpts?.handoffWindowMs ?? handoffWindowMs,
         history: sessionHistory,
         addedFiles: addedContextFiles,
@@ -736,7 +872,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       const assistantOutput =
         result.raceResult.parseResult.visibleOutput.trim() ||
         (result.executionSummary.modifiedFiles.length > 0
-          ? `Modified files: ${result.executionSummary.modifiedFiles.join(', ')}`
+          ? `Modified files: ${result.executionSummary.modifiedFiles.map((f) => f.relativePath).join(', ')}`
           : 'Task completed.');
       sessionHistory.push({ role: 'assistant', content: assistantOutput });
 
@@ -750,6 +886,8 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     baseDir,
     lightModel,
     heavyModel,
+    strongPool,
+    weakPool,
     handoffWindowMs,
     apiKey: options.apiKey ?? config.nvidiaApiKey,
     fetchImpl: options.fetchImpl,

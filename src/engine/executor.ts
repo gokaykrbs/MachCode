@@ -125,14 +125,26 @@ export async function executeParsedCode(
 
     const resolved = resolveBlockTarget(block, options.targetFilePath);
     if (!resolved) {
-      throw new Error(
-        'Cannot apply extracted code: no targetFilePath was provided and the code block has no `// file: <path>` header.',
-      );
+      // Code block has no `// file: <path>` header and no explicit targetFilePath:
+      // treat it as an illustrative snippet inside a conversational Q&A response.
+      continue;
     }
 
     const existingChunks = fileContentsMap.get(resolved.filePath) ?? [];
     existingChunks.push(resolved.cleanCode);
     fileContentsMap.set(resolved.filePath, existingChunks);
+  }
+
+  if (fileContentsMap.size === 0) {
+    const formattedSummary = chalk.yellow(
+      'Conversational response only (no target file headers). No files were modified.',
+    );
+    return {
+      modifiedFiles: [],
+      skipped: true,
+      skippedReason: 'no_code_extracted',
+      formattedSummary,
+    };
   }
 
   const modifiedFiles: WriteFileResult[] = [];

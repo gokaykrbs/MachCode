@@ -8,6 +8,8 @@
 export interface AutoRouteResult {
   lightModel: string;
   heavyModel: string;
+  strongPool?: string[];
+  weakPool?: string[];
 }
 
 export interface ModelPools {
@@ -21,7 +23,30 @@ export interface AutoRouterOptions {
   fallbackHeavy?: string;
   fallbackStrong?: string;
   fallbackWeak?: string;
+  maxPoolSize?: number;
 }
+
+/**
+ * Verified active multi-provider frontier models on NVIDIA NIM.
+ * Prioritizes diverse model families (MiniMax, OpenAI OSS, Google Gemma, Meta Muse, DeepSeek, NVIDIA)
+ * so multi-model racing genuinely competes across distinct AI providers.
+ */
+export const VERIFIED_STRONG_POOL_MODELS: readonly string[] = [
+  'minimaxai/minimax-m3.1-flash',
+  'google/diffusiongemma-26b-a4b-it',
+  'openai/gpt-oss-20b',
+  'nvidia/nemotron-3.5-super-vl-120b-a12b',
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+  'nvidia/nemotron-3.5-lightning-30b-a3b',
+];
+
+export const VERIFIED_WEAK_POOL_MODELS: readonly string[] = [
+  'minimaxai/minimax-m3.1-flash',
+  'openai/gpt-oss-20b',
+  'google/diffusiongemma-26b-a4b-it',
+  'nvidia/nemotron-3.5-bolt-e4b',
+  'meta/llama-3.2-11b-vision-instruct',
+];
 
 const UNWANTED_SUBSTRINGS = [
   'embed',
@@ -35,6 +60,11 @@ const UNWANTED_SUBSTRINGS = [
   'translate',
   'calibration',
   'synthetic',
+  'deplot',
+  'kosmos',
+  'fuyu',
+  'vila',
+  'neva',
 ];
 
 /**
@@ -172,8 +202,8 @@ export function scoreModelRole(id: string, role: 'light' | 'heavy'): number {
 
 /**
  * Categorizes available NVIDIA NIM models into a StrongPool and a WeakPool.
- * - StrongPool: parameters >= 30B or reasoning models
- * - WeakPool: parameters < 30B, fast/small models for fallback
+ * - StrongPool: multi-provider frontier reasoning & coding models raced in parallel
+ * - WeakPool: fast instruction models for immediate fallback
  */
 export function categorizeModels(
   availableModels: string[],
@@ -188,6 +218,8 @@ export function categorizeModels(
   );
 
   const usable = availableModels.filter((id) => !excludeSet.has(id) && isUsableGenerativeModel(id));
+  const usableSet = new Set(usable);
+  const maxPoolSize = options.maxPoolSize;
 
   const fallbackStrong =
     options.fallbackStrong ??
@@ -198,15 +230,47 @@ export function categorizeModels(
     options.fallbackLight ??
     'meta/llama-3.2-11b-vision-instruct';
 
+  // Check if live multi-provider NIM catalog models are present in `usable`
+  const verifiedStrongPresent = VERIFIED_STRONG_POOL_MODELS.filter((m) => usableSet.has(m));
+  const verifiedWeakPresent = VERIFIED_WEAK_POOL_MODELS.filter((m) => usableSet.has(m));
+
   const strongCandidates = usable.filter((id) => isStrongModel(id));
   const weakCandidates = usable.filter((id) => !isStrongModel(id));
 
-  const strongPool = strongCandidates.sort(
+  const sortedStrong = strongCandidates.sort(
     (a, b) => scoreModelRole(b, 'heavy') - scoreModelRole(a, 'heavy'),
   );
-  const weakPool = weakCandidates.sort(
+  const sortedWeak = weakCandidates.sort(
     (a, b) => scoreModelRole(b, 'light') - scoreModelRole(a, 'light'),
   );
+
+  // If the full live NVIDIA NIM catalog was fetched (contains verified active endpoints),
+  // include ALL usable generative models from the API key so every single model races in parallel!
+  const allUsableOrdered = Array.from(
+    new Set([
+      ...verifiedStrongPresent,
+      ...sortedStrong,
+      ...sortedWeak.filter((m) => !m.includes('bolt-e4b')),
+      ...sortedWeak.filter((m) => m.includes('bolt-e4b')),
+    ]),
+  );
+
+  const rawStrongPool =
+    verifiedStrongPresent.length >= 2
+      ? allUsableOrdered
+      : sortedStrong.length > 0
+        ? sortedStrong
+        : VERIFIED_STRONG_POOL_MODELS.filter((m) => !excludeSet.has(m));
+
+  const rawWeakPool =
+    verifiedWeakPresent.length >= 2
+      ? Array.from(new Set([...verifiedWeakPresent, ...sortedWeak]))
+      : sortedWeak.length > 0
+        ? sortedWeak
+        : VERIFIED_WEAK_POOL_MODELS.filter((m) => !excludeSet.has(m));
+
+  const strongPool = maxPoolSize ? rawStrongPool.slice(0, maxPoolSize) : rawStrongPool;
+  const weakPool = maxPoolSize ? rawWeakPool.slice(0, maxPoolSize) : rawWeakPool;
 
   return {
     strongPool: strongPool.length > 0 ? strongPool : [fallbackStrong],
@@ -216,7 +280,7 @@ export function categorizeModels(
 
 /**
  * Autonomously selects the top Lightweight (Fast/Weak) and Heavyweight (Smart/Strong) models
- * from a list of active NVIDIA NIM models.
+ * as well as the full multi-model racing pools from a list of active NVIDIA NIM models.
  */
 export function autoRouteModels(
   availableModels: string[],
@@ -225,6 +289,11 @@ export function autoRouteModels(
   const pools = categorizeModels(availableModels, options);
   return {
     lightModel: pools.weakPool[0] ?? options.fallbackLight ?? 'meta/llama-3.2-11b-vision-instruct',
-    heavyModel: pools.strongPool[0] ?? options.fallbackHeavy ?? 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+    heavyModel:
+      pools.strongPool[0] ??
+      options.fallbackHeavy ??
+      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+    strongPool: pools.strongPool,
+    weakPool: pools.weakPool,
   };
 }

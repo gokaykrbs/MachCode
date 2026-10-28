@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { stdout as output } from 'node:process';
 import chalk from 'chalk';
 import { loadConfig, DEFAULT_API_TIMEOUT_MS } from '../config/index.js';
+import { VERIFIED_STRONG_POOL_MODELS, VERIFIED_WEAK_POOL_MODELS } from './autoRouter.js';
 import { buildSniperSystemPrompt } from '../prompts/sniper.js';
 import { StreamParser, type StreamParseResult } from '../utils/streamParser.js';
 import type { OpenAIToolDefinition } from '../tools/index.js';
@@ -23,7 +24,11 @@ export interface TieredFallbackOptions {
   fetchImpl?: typeof fetch;
   promptOnQuestion?: boolean;
   onQuestion?: (question: string) => Promise<string | void> | string | void;
-  onFirstToken?: (model: string, tier: 'strong' | 'weak') => void;
+  onFirstToken?: (
+    model: string,
+    tier: 'strong' | 'weak',
+    details?: { racedModels: string[]; latencyMs: number },
+  ) => void;
   onFallback?: (fromTier: 'strong', toTier: 'weak', reason: string) => void;
   onTerminalChunk?: (chunk: string, model: string, tier: string) => void;
   onTerminalClear?: (clearedText: string) => void;
@@ -42,6 +47,8 @@ export interface TieredFallbackResult {
   winnerModel: string;
   winnerRole: 'strong' | 'weak' | 'heavy' | 'light';
   winnerTier?: 'strong' | 'weak';
+  racedModels?: string[];
+  winnerLatencyMs?: number;
   handoffOccurred: boolean;
   handoffElapsedMs: number | null;
   lightAborted: boolean;
@@ -191,6 +198,8 @@ async function* streamChatCompletionTokens(params: {
 
   const decoder = new TextDecoder('utf-8');
   let sseBuffer = '';
+  let reasoningBuffer = '';
+  let emittedContent = false;
 
   try {
     while (true) {
@@ -224,6 +233,9 @@ async function* streamChatCompletionTokens(params: {
       }
 
       if (done) {
+        if (!emittedContent && reasoningBuffer.trim().length > 0) {
+          yield reasoningBuffer;
+        }
         break;
       }
 
@@ -241,6 +253,9 @@ async function* streamChatCompletionTokens(params: {
 
         const payload = line.slice('data:'.length).trim();
         if (payload === '[DONE]') {
+          if (!emittedContent && reasoningBuffer.trim().length > 0) {
+            yield reasoningBuffer;
+          }
           return;
         }
 
@@ -249,13 +264,35 @@ async function* streamChatCompletionTokens(params: {
             choices?: Array<{ delta?: { content?: string | null; reasoning_content?: string | null } }>;
           };
           const delta = parsed.choices?.[0]?.delta;
-          const content = delta?.content ?? delta?.reasoning_content;
-          if (typeof content === 'string' && content.length > 0) {
+          const reasoningChunk = delta?.reasoning_content;
+          const contentChunk = delta?.content;
+
+          // If the model is streaming internal chain-of-thought (`reasoning_content`),
+          // keep the connection alive and buffer it into <plan> so raw thinking never leaks to stdout
+          // and models only win the race once they emit actual user-facing `content`.
+          if (typeof reasoningChunk === 'string' && reasoningChunk.length > 0) {
             if (!streamStarted) {
               streamStarted = true;
               clearTimer();
             }
-            yield content;
+            reasoningBuffer += reasoningChunk;
+          }
+
+          if (typeof contentChunk === 'string' && contentChunk.length > 0) {
+            if (!streamStarted) {
+              streamStarted = true;
+              clearTimer();
+            }
+            if (!emittedContent) {
+              emittedContent = true;
+              if (reasoningBuffer.trim().length > 0 && !contentChunk.includes('<plan>')) {
+                const prefixed = `<plan>${reasoningBuffer.trim()}</plan>\n${contentChunk}`;
+                reasoningBuffer = '';
+                yield prefixed;
+                continue;
+              }
+            }
+            yield contentChunk;
           }
         } catch {
           // Ignore malformed keep-alive comments
@@ -275,6 +312,8 @@ interface TierExecutionResult {
   firstToken: string;
   tokenStream: AsyncGenerator<string, void, unknown>;
   winnerTier: 'strong' | 'weak';
+  racedModels: string[];
+  latencyMs: number;
 }
 
 /**
@@ -303,6 +342,7 @@ async function executeTier(
 
   const controllers = new Map<string, AbortController>();
   const errorMap = new Map<string, unknown>();
+  const tierStartTime = Date.now();
 
   return new Promise<TierExecutionResult>((resolve, reject) => {
     let resolved = false;
@@ -352,6 +392,19 @@ async function executeTier(
 
       (async () => {
         try {
+          if (uniqueModels.length > 1 && model.includes('bolt-e4b')) {
+            await new Promise<void>((r) => {
+              const t = setTimeout(r, 1800);
+              controller.signal.addEventListener('abort', () => {
+                clearTimeout(t);
+                r();
+              }, { once: true });
+            });
+            if (resolved || controller.signal.aborted) {
+              return;
+            }
+          }
+
           const stream = streamChatCompletionTokens({
             endpoint: params.endpoint,
             apiKey: params.apiKey,
@@ -384,6 +437,8 @@ async function executeTier(
             firstToken: firstIteration.value,
             tokenStream: stream,
             winnerTier: tier,
+            racedModels: uniqueModels,
+            latencyMs: Date.now() - tierStartTime,
           });
         } catch (err) {
           errorMap.set(model, err);
@@ -396,14 +451,14 @@ async function executeTier(
 }
 
 /**
- * Simple Tiered Priority Fallback Engine.
+ * Multi-Model Parallel Racing & Tiered Priority Fallback Engine.
  * 
- * 1. Primary: Fires requests to the StrongPool.
- * 2. If ANY strong model successfully returns 200 OK and starts streaming,
- *    instantly locks onto it, streams it to the UI, and aborts all other requests.
+ * 1. Primary: Fires parallel requests across all models in the StrongPool.
+ * 2. As soon as the fastest strong model returns 200 OK and emits its first actual content token,
+ *    instantly locks onto it, streams it to the UI, and aborts all competing requests.
  * 3. Fallback: IF AND ONLY IF all models in the StrongPool fail, timeout, or return errors,
- *    THEN immediately fires requests to the WeakPool to guarantee the user gets a response.
- * 4. Clean UI: Only starts rendering stream chunks to the terminal ONCE a model has successfully connected.
+ *    THEN immediately fires parallel requests to the WeakPool to guarantee the user gets a response.
+ * 4. Clean UI: Only starts rendering stream chunks to the terminal ONCE a model has won the race.
  */
 export async function tieredFallback(
   prompt: string,
@@ -419,18 +474,18 @@ export async function tieredFallback(
 
   // Resolve StrongPool and WeakPool
   const strongPool: string[] = options.strongPool ??
-    (Array.isArray(heavyModelOrStrongPool)
+    (Array.isArray(heavyModelOrStrongPool) && heavyModelOrStrongPool.length > 0
       ? heavyModelOrStrongPool
       : typeof heavyModelOrStrongPool === 'string' && heavyModelOrStrongPool.trim().length > 0
         ? [heavyModelOrStrongPool.trim()]
-        : ['nvidia/nemotron-3-nano-omni-30b-a3b-reasoning']);
+        : [...VERIFIED_STRONG_POOL_MODELS]);
 
   const weakPool: string[] = options.weakPool ??
-    (Array.isArray(lightModelOrWeakPool)
+    (Array.isArray(lightModelOrWeakPool) && lightModelOrWeakPool.length > 0
       ? lightModelOrWeakPool
       : typeof lightModelOrWeakPool === 'string' && lightModelOrWeakPool.trim().length > 0
         ? [lightModelOrWeakPool.trim()]
-        : ['meta/llama-3.2-11b-vision-instruct']);
+        : [...VERIFIED_WEAK_POOL_MODELS]);
 
   const systemPrompt = options.systemPrompt ?? buildSniperSystemPrompt();
 
@@ -506,12 +561,13 @@ export async function tieredFallback(
   }
 
   // Lock onto the winning model
-  const { winnerModel, firstToken, tokenStream, winnerTier } = winnerExecution;
+  const { winnerModel, firstToken, tokenStream, winnerTier, racedModels, latencyMs } =
+    winnerExecution;
   activeModel = winnerModel;
   activeTier = winnerTier;
 
   // Clean UI: Signal that model has successfully connected before any rendering starts
-  options.onFirstToken?.(winnerModel, winnerTier);
+  options.onFirstToken?.(winnerModel, winnerTier, { racedModels, latencyMs });
 
   // Feed first token into parser
   parser.feed(firstToken);
@@ -532,6 +588,8 @@ export async function tieredFallback(
     winnerModel,
     winnerRole: isStrong ? 'heavy' : 'light',
     winnerTier,
+    racedModels,
+    winnerLatencyMs: latencyMs,
     handoffOccurred: false,
     handoffElapsedMs: 0,
     lightAborted: isStrong,

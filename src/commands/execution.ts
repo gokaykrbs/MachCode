@@ -48,6 +48,8 @@ export const heavyCommand: SlashCommand = {
       baseDir: context.baseDir,
       lightModel: context.heavyModel,
       heavyModel: context.heavyModel,
+      strongPool: [context.heavyModel],
+      weakPool: [context.heavyModel],
       handoffWindowMs: 0,
       apiKey: context.apiKey,
       fetchImpl: context.fetchImpl,
@@ -75,7 +77,40 @@ export const fastCommand: SlashCommand = {
       baseDir: context.baseDir,
       lightModel: context.lightModel,
       heavyModel: context.lightModel,
+      strongPool: [context.lightModel],
+      weakPool: [context.lightModel],
       handoffWindowMs: 9999999,
+      apiKey: context.apiKey,
+      fetchImpl: context.fetchImpl,
+      history: context.sessionHistory,
+      writeToStdout: true,
+    });
+  },
+};
+
+export const askCommand: SlashCommand = {
+  name: 'ask',
+  description: 'Ask a question, explain code, or chat without modifying any workspace files',
+  category: 'Execution & Modes',
+  usage: '/ask <question>',
+  aliases: ['chat', 'explain', 'qna'],
+  execute: async (args: string, context: CommandContext) => {
+    if (!args || args.trim().length === 0) {
+      console.log(chalk.yellow('Usage: /ask <question or topic to explain>'));
+      return;
+    }
+
+    console.log(chalk.cyan.bold('\n💬 Conversational Q&A Mode (Read-Only)...\n'));
+
+    const askPrompt = `[CONVERSATIONAL Q&A MODE: Answer the user's question clearly, thoroughly, and helpfully in their language using Markdown. Do NOT include \`// file: <path>\` headers or overwrite any files on disk]:\n${args.trim()}`;
+
+    await context.runMachCode(askPrompt, {
+      baseDir: context.baseDir,
+      lightModel: context.lightModel,
+      heavyModel: context.heavyModel,
+      strongPool: context.strongPool,
+      weakPool: context.weakPool,
+      handoffWindowMs: context.handoffWindowMs,
       apiKey: context.apiKey,
       fetchImpl: context.fetchImpl,
       history: context.sessionHistory,
@@ -129,6 +164,7 @@ ${fileContent}
 };
 
 export const executionCommands: SlashCommand[] = [
+  askCommand,
   planCommand,
   heavyCommand,
   fastCommand,

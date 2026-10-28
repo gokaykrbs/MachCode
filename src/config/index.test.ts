@@ -89,6 +89,8 @@ describe('AutoRouter & Autonomous Model Routing', () => {
           existingConfig.nvidiaApiKey,
           existingConfig.lightModel,
           existingConfig.heavyModel,
+          existingConfig.strongPool,
+          existingConfig.weakPool,
         );
       }
     }

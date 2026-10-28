@@ -10,6 +10,8 @@ export interface MachCodeConfig {
   nvidiaApiKey: string;
   lightModel: string;
   heavyModel: string;
+  strongPool?: string[];
+  weakPool?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -73,6 +75,8 @@ export async function loadConfig(): Promise<MachCodeConfig | null> {
     nvidiaApiKey: apiKey.trim(),
     lightModel: parsed?.lightModel ?? '',
     heavyModel: parsed?.heavyModel ?? '',
+    strongPool: Array.isArray(parsed?.strongPool) ? parsed.strongPool : undefined,
+    weakPool: Array.isArray(parsed?.weakPool) ? parsed.weakPool : undefined,
     createdAt: parsed?.createdAt ?? new Date().toISOString(),
     updatedAt: parsed?.updatedAt ?? new Date().toISOString(),
   };
@@ -85,6 +89,8 @@ export async function saveConfig(
   nvidiaApiKey: string,
   lightModel?: string,
   heavyModel?: string,
+  strongPool?: string[],
+  weakPool?: string[],
 ): Promise<MachCodeConfig> {
   const configDir = getConfigDir();
   const configPath = getConfigPath();
@@ -95,6 +101,8 @@ export async function saveConfig(
     nvidiaApiKey: nvidiaApiKey.trim(),
     lightModel: (lightModel ?? existing?.lightModel ?? '').trim(),
     heavyModel: (heavyModel ?? existing?.heavyModel ?? '').trim(),
+    strongPool: strongPool ?? existing?.strongPool,
+    weakPool: weakPool ?? existing?.weakPool,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
@@ -227,9 +235,12 @@ export async function autoAssignAndSaveModels(
     // If fetching fails (e.g. offline, network glitch, or mock fetch in tests), autoRouteModels uses safe defaults
   }
 
-  const { lightModel, heavyModel } = autoRouteModels(availableModels, options);
-  await saveConfig(apiKey, lightModel, heavyModel);
-  return { lightModel, heavyModel };
+  const { lightModel, heavyModel, strongPool, weakPool } = autoRouteModels(
+    availableModels,
+    options,
+  );
+  await saveConfig(apiKey, lightModel, heavyModel, strongPool, weakPool);
+  return { lightModel, heavyModel, strongPool, weakPool };
 }
 
 /**
@@ -246,9 +257,16 @@ export async function ensureConfig(options: EnsureConfigOptions = {}): Promise<M
     config = await saveConfig(apiKey);
   }
 
-  // If models are not configured or a refresh was forced, auto-assign autonomously
-  if (!config?.lightModel || !config?.heavyModel || options.forceRefresh) {
-    const { lightModel, heavyModel } = await autoAssignAndSaveModels(
+  // If models or multi-model racing pools are not configured or a refresh was forced, auto-assign autonomously
+  if (
+    !config ||
+    !config.lightModel ||
+    !config.heavyModel ||
+    !Array.isArray(config.strongPool) ||
+    config.strongPool.length < 2 ||
+    options.forceRefresh
+  ) {
+    const { lightModel, heavyModel, strongPool, weakPool } = await autoAssignAndSaveModels(
       apiKey,
       options.baseUrl,
       options.fetchImpl,
@@ -257,6 +275,8 @@ export async function ensureConfig(options: EnsureConfigOptions = {}): Promise<M
       nvidiaApiKey: apiKey,
       lightModel,
       heavyModel,
+      strongPool,
+      weakPool,
       createdAt: config?.createdAt ?? new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

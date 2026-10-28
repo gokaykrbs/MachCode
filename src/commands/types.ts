@@ -19,6 +19,8 @@ export interface CommandContext {
   baseDir: string;
   lightModel: string;
   heavyModel: string;
+  strongPool?: string[];
+  weakPool?: string[];
   handoffWindowMs: number;
   apiKey?: string;
   fetchImpl?: typeof fetch;

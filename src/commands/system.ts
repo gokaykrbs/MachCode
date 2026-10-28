@@ -116,18 +116,20 @@ export const runCommand: SlashCommand = {
 
 export const configCommand: SlashCommand = {
   name: 'config',
-  description: 'View or refresh autonomous model routing & API key',
+  description: 'View or refresh autonomous multi-model racing pools & API key',
   category: 'System',
   usage: '/config [refresh|key]',
   aliases: ['setup', 'apikey', 'models', 'router'],
   execute: async (args: string, context: CommandContext) => {
     const configPath = getConfigPath();
     const existing = await loadConfig();
+    const strongPool = context.strongPool ?? existing?.strongPool ?? [context.heavyModel];
+    const weakPool = context.weakPool ?? existing?.weakPool ?? [context.lightModel];
 
-    console.log(chalk.cyan.bold('\n⚙ MachCode Autonomous Configuration:'));
-    console.log(`  Config File: ${chalk.gray(configPath)}`);
+    console.log(chalk.cyan.bold('\n⚙ MachCode Autonomous Multi-Model Configuration:'));
+    console.log(`  Config File:  ${chalk.gray(configPath)}`);
     console.log(
-      `  API Key:     ${
+      `  API Key:      ${
         existing?.nvidiaApiKey
           ? chalk.green(
               `Configured (${existing.nvidiaApiKey.slice(0, 10)}...${existing.nvidiaApiKey.slice(-4)})`,
@@ -136,11 +138,18 @@ export const configCommand: SlashCommand = {
       }`,
     );
     console.log(
-      `  Fast Model:  ${chalk.magenta(existing?.lightModel || context.lightModel || 'Auto-routing...')}`,
+      `  Strong Pool:  ${chalk.magenta.bold(`${strongPool.length} models racing in parallel`)}`,
     );
+    for (const m of strongPool) {
+      console.log(`                ${chalk.magenta('•')} ${chalk.white(m)}`);
+    }
     console.log(
-      `  Smart Model: ${chalk.magenta(existing?.heavyModel || context.heavyModel || 'Auto-routing...')}\n`,
+      `  Weak Pool:    ${chalk.blue.bold(`${weakPool.length} fast fallback models`)}`,
     );
+    for (const m of weakPool) {
+      console.log(`                ${chalk.blue('•')} ${chalk.gray(m)}`);
+    }
+    console.log('');
 
     const sub = (args || '').trim().toLowerCase();
     if (sub === 'refresh' || sub === 'models') {
@@ -154,9 +163,13 @@ export const configCommand: SlashCommand = {
       const updated = await autoAssignAndSaveModels(apiKey, undefined, context.fetchImpl);
       context.lightModel = updated.lightModel;
       context.heavyModel = updated.heavyModel;
+      context.strongPool = updated.strongPool;
+      context.weakPool = updated.weakPool;
       console.log(
-        chalk.green.bold('✔ AutoRouter updated models:') +
-          chalk.white(`\n  ⚡ Fast:  ${updated.lightModel}\n  🧠 Smart: ${updated.heavyModel}\n`),
+        chalk.green.bold('✔ AutoRouter updated multi-model racing pools:') +
+          chalk.white(
+            `\n  🏎️  Strong Pool (${updated.strongPool?.length ?? 1}): ${(updated.strongPool ?? [updated.heavyModel]).join(', ')}\n  ⚡ Weak Pool   (${updated.weakPool?.length ?? 1}): ${(updated.weakPool ?? [updated.lightModel]).join(', ')}\n`,
+          ),
       );
       return;
     }
@@ -168,17 +181,112 @@ export const configCommand: SlashCommand = {
       context.apiKey = newKey;
       context.lightModel = updated.lightModel;
       context.heavyModel = updated.heavyModel;
-      console.log(chalk.green.bold('✔ API Key & AutoRouter models successfully updated!\n'));
+      context.strongPool = updated.strongPool;
+      context.weakPool = updated.weakPool;
+      console.log(chalk.green.bold('✔ API Key & AutoRouter model pools successfully updated!\n'));
       return;
     }
 
     console.log(
       chalk.dim('Tip: Use ') +
         chalk.yellow('/config refresh') +
-        chalk.dim(' to re-scan active NIM models, or ') +
+        chalk.dim(' to re-scan active NIM models, ') +
+        chalk.yellow('/race') +
+        chalk.dim(' to live-benchmark all models, or ') +
         chalk.yellow('/config key') +
         chalk.dim(' to update your API key.\n'),
     );
+  },
+};
+
+export const raceCommand: SlashCommand = {
+  name: 'race',
+  description: 'Run a live parallel speed benchmark across all AI models in the racing pool',
+  category: 'System',
+  usage: '/race',
+  aliases: ['benchmark', 'ping'],
+  execute: async (_args: string, context: CommandContext) => {
+    const existing = await loadConfig();
+    const apiKey = context.apiKey ?? existing?.nvidiaApiKey;
+    if (!apiKey) {
+      console.log(chalk.red('\n✖ NVIDIA_API_KEY is not configured.\n'));
+      return;
+    }
+
+    const { VERIFIED_STRONG_POOL_MODELS, VERIFIED_WEAK_POOL_MODELS } = await import(
+      '../engine/autoRouter.js'
+    );
+    const pool = Array.from(
+      new Set([
+        ...(context.strongPool ?? existing?.strongPool ?? VERIFIED_STRONG_POOL_MODELS),
+        ...(context.weakPool ?? existing?.weakPool ?? VERIFIED_WEAK_POOL_MODELS),
+      ]),
+    );
+
+    console.log(
+      chalk.cyan.bold(`\n🏎️  Racing ${pool.length} AI models in parallel on NVIDIA NIM...\n`),
+    );
+
+    const fetchFn = context.fetchImpl ?? globalThis.fetch;
+    const results = await Promise.all(
+      pool.map(async (model) => {
+        const start = Date.now();
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        try {
+          const res = await fetchFn('https://integrate.api.nvidia.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: 'user', content: 'Say OK' }],
+              max_tokens: 16,
+            }),
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+          return {
+            model,
+            ok: res.ok,
+            status: String(res.status),
+            latencyMs: Date.now() - start,
+          };
+        } catch {
+          clearTimeout(timer);
+          return {
+            model,
+            ok: false,
+            status: 'TIMEOUT',
+            latencyMs: Date.now() - start,
+          };
+        }
+      }),
+    );
+
+    results.sort((a, b) => {
+      if (a.ok !== b.ok) return a.ok ? -1 : 1;
+      return a.latencyMs - b.latencyMs;
+    });
+
+    const medals = ['🏆 1st', '🥈 2nd', '🥉 3rd'];
+    let okRank = 0;
+    for (const r of results) {
+      if (r.ok) {
+        const badge = medals[okRank] ? chalk.yellow.bold(medals[okRank].padEnd(8)) : chalk.green('✔ OK    ');
+        okRank++;
+        console.log(
+          `  ${badge} ${chalk.white.bold(r.model.padEnd(46))} ${chalk.green(`${r.latencyMs}ms`)} ${chalk.gray(`(HTTP ${r.status})`)}`,
+        );
+      } else {
+        console.log(
+          `  ${chalk.red('✖ FAIL  ')} ${chalk.gray(r.model.padEnd(46))} ${chalk.red(`${r.status} (${r.latencyMs}ms)`)}`,
+        );
+      }
+    }
+    console.log('');
   },
 };
 
@@ -195,6 +303,7 @@ export const clearCommand: SlashCommand = {
       sessionId: context.sessionId,
       lightModel: context.lightModel,
       heavyModel: context.heavyModel,
+      strongPool: context.strongPool,
     });
   },
 };
@@ -217,6 +326,7 @@ export const systemCommands: SlashCommand[] = [
   tokensCommand,
   runCommand,
   configCommand,
+  raceCommand,
   clearCommand,
   exitCommand,
 ];
