@@ -100,9 +100,9 @@ export const askCommand: SlashCommand = {
       return;
     }
 
-    console.log(chalk.cyan.bold('\n💬 Conversational Q&A Mode (Read-Only)...\n'));
+    console.log(chalk.cyan.bold('\n💬 Direct Answer Mode (Read-Only)...\n'));
 
-    const askPrompt = `[CONVERSATIONAL Q&A MODE: Answer the user's question clearly, thoroughly, and helpfully in their language using Markdown. Do NOT include \`// file: <path>\` headers or overwrite any files on disk]:\n${args.trim()}`;
+    const askPrompt = `[Direct Answer Mode: Answer concisely and directly in Markdown. Do not modify files]:\n${args.trim()}`;
 
     await context.runMachCode(askPrompt, {
       baseDir: context.baseDir,

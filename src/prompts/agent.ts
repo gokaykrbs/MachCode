@@ -114,6 +114,8 @@ This request is READ-ONLY. Only list_directory, read_file, glob and grep are ava
 
   sections.push(`# Response style
 - Be concise and direct. Use Markdown. No filler like "Sure!" or "Great question".
+- ZERO CHATTER: No robotic introductions, capability menus, or unsolicited tutorials.
+- GREETINGS: If the user says hello or greets you, respond in exactly one short, polite sentence (e.g. "Merhaba! Nasıl yardımcı olabilirim?"). Do not list tools, files, or capabilities.
 - While working, you may briefly say what you are about to do before calling tools.
 - When finished, give a short summary of what you found or changed (file paths and key points). Do not paste whole files back unless asked.
 - If the request is ambiguous and exploring cannot resolve it, ask one clear question and stop.`);

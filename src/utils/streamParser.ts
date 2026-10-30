@@ -46,8 +46,27 @@ export interface StreamParserOptions {
   promptOnQuestion?: boolean;
 }
 
-const OPEN_PLAN_TAG = '<plan>';
-const CLOSE_PLAN_TAG = '</plan>';
+const OPEN_PLAN_REGEX =
+  /(?:<plan\b[^>]*>|<think\b[^>]*>|<thought\b[^>]*>|\[PLAN\]|\[THINK\]|(?:^|\r?\n)\s*(?:plan|think|thought)\s*>)/i;
+
+const CLOSE_PLAN_REGEX =
+  /(?:<\/plan\s*>|<\/think\s*>|<\/thought\s*>|\[\/(?:PLAN|THINK)\]|\[END_(?:PLAN|THINK)\]|(?:^|\r?\n)\s*(?:<\/plan>|<\/think>|<\/thought>|\/plan>|\/think>|\/thought>|plan>|think>|thought>))/i;
+
+const BRACKETED_OPEN_TAGS = ['<plan>', '<think>', '<thought>', '[PLAN]', '[THINK]'];
+const BARE_OPEN_TAGS = ['plan>', 'think>', 'thought>'];
+
+const CLOSE_TAG_CANDIDATES = [
+  '</plan>',
+  '</think>',
+  '</thought>',
+  '[/PLAN]',
+  '[/THINK]',
+  '[END_PLAN]',
+  '[END_THINK]',
+  '/plan>',
+  '/think>',
+  '/thought>',
+];
 const QUESTION_PREFIX = 'QUESTION:';
 
 /**
@@ -59,11 +78,54 @@ function getTrailingTagPrefixLength(buffer: string, tag: string): number {
   for (let len = maxLen; len >= 1; len--) {
     const suffix = buffer.slice(buffer.length - len);
     const prefix = tag.slice(0, len);
-    if (suffix === prefix) {
+    if (suffix.toLowerCase() === prefix.toLowerCase()) {
       return len;
     }
   }
   return 0;
+}
+
+/**
+ * Returns the maximum trailing prefix length matching any tag in `tags`.
+ */
+function getMaxTrailingPrefixLength(buffer: string, tags: string[]): number {
+  let max = 0;
+  for (const tag of tags) {
+    const len = getTrailingTagPrefixLength(buffer, tag);
+    if (len > max) {
+      max = len;
+    }
+  }
+  return max;
+}
+
+/**
+ * Calculates trailing open tag hold length. Bracketed tags (<plan>, <think>, etc.) can appear anywhere.
+ * Bare tags (plan>, think>, etc.) are only held if positioned at stream start or immediately after a newline.
+ */
+function getTrailingOpenTagHoldLength(buffer: string, isStreamStart: boolean): number {
+  let maxHold = 0;
+
+  for (const tag of BRACKETED_OPEN_TAGS) {
+    const len = getTrailingTagPrefixLength(buffer, tag);
+    if (len > maxHold) {
+      maxHold = len;
+    }
+  }
+
+  for (const tag of BARE_OPEN_TAGS) {
+    const len = getTrailingTagPrefixLength(buffer, tag);
+    if (len > 0) {
+      const startIdx = buffer.length - len;
+      const isStart =
+        startIdx === 0 ? isStreamStart : /[\r\n]\s*$/.test(buffer.slice(0, startIdx));
+      if (isStart && len > maxHold) {
+        maxHold = len;
+      }
+    }
+  }
+
+  return maxHold;
 }
 
 /**
@@ -177,6 +239,19 @@ export class StreamParser {
       }
     }
 
+    // Defense-in-depth: strip any residual plan/think blocks that might have slipped through
+    const cleanedVisible = this.visibleBuffer
+      .replace(/<plan\b[^>]*>[\s\S]*?<\/plan\s*>/gi, '')
+      .replace(/(?:^|\r?\n)\s*plan>[\s\S]*?<\/plan\s*>/gi, '')
+      .replace(/<think\b[^>]*>[\s\S]*?<\/think\s*>/gi, '')
+      .replace(/(?:^|\r?\n)\s*think>[\s\S]*?<\/think\s*>/gi, '')
+      .replace(/<thought\b[^>]*>[\s\S]*?<\/thought\s*>/gi, '')
+      .replace(/(?:^|\r?\n)\s*thought>[\s\S]*?<\/thought\s*>/gi, '')
+      .replace(/\[PLAN\][\s\S]*?\[\/(?:PLAN|END_PLAN)\]/gi, '')
+      .trimStart();
+
+    this.visibleBuffer = cleanedVisible;
+
     const codeBlocks = this.halted ? [] : extractCodeFromMarkdown(this.visibleBuffer);
     const extractedCode = codeBlocks.map((block) => block.code).join('\n\n');
 
@@ -204,12 +279,27 @@ export class StreamParser {
     if (!text) {
       return;
     }
-    this.visibleBuffer += text;
+
+    // Secondary defense: strip any closed plan/think blocks
+    const sanitized = text
+      .replace(/<plan\b[^>]*>[\s\S]*?<\/plan\s*>/gi, '')
+      .replace(/(?:^|\r?\n)\s*plan>[\s\S]*?<\/plan\s*>/gi, '')
+      .replace(/<think\b[^>]*>[\s\S]*?<\/think\s*>/gi, '')
+      .replace(/(?:^|\r?\n)\s*think>[\s\S]*?<\/think\s*>/gi, '')
+      .replace(/<thought\b[^>]*>[\s\S]*?<\/thought\s*>/gi, '')
+      .replace(/(?:^|\r?\n)\s*thought>[\s\S]*?<\/thought\s*>/gi, '')
+      .replace(/\[PLAN\][\s\S]*?\[\/(?:PLAN|END_PLAN)\]/gi, '');
+
+    if (!sanitized) {
+      return;
+    }
+
+    this.visibleBuffer += sanitized;
     if (this.options.onTerminalChunk) {
-      this.options.onTerminalChunk(text);
+      this.options.onTerminalChunk(sanitized);
     }
     if (this.options.writeToStdout) {
-      output.write(text);
+      output.write(sanitized);
     }
   }
 
@@ -226,11 +316,13 @@ export class StreamParser {
       }
 
       if (this.mode === 'IN_PLAN') {
-        const closeIdx = this.pendingBuffer.indexOf(CLOSE_PLAN_TAG);
-        if (closeIdx !== -1) {
+        const closeMatch = CLOSE_PLAN_REGEX.exec(this.pendingBuffer);
+        if (closeMatch && closeMatch.index !== undefined) {
+          const closeIdx = closeMatch.index;
+          const closeLen = closeMatch[0].length;
           this.planBuffer += this.pendingBuffer.slice(0, closeIdx);
-          this.pendingBuffer = this.pendingBuffer.slice(closeIdx + CLOSE_PLAN_TAG.length);
-          // Strip immediate leading newline after </plan> so terminal output stays clean
+          this.pendingBuffer = this.pendingBuffer.slice(closeIdx + closeLen);
+          // Strip immediate leading newline after close tag so terminal output stays clean
           this.pendingBuffer = this.pendingBuffer.replace(/^\r?\n/, '');
           this.mode = 'OUTSIDE_PLAN';
           keepProcessing = true;
@@ -243,7 +335,7 @@ export class StreamParser {
           return;
         }
 
-        const holdLen = getTrailingTagPrefixLength(this.pendingBuffer, CLOSE_PLAN_TAG);
+        const holdLen = getMaxTrailingPrefixLength(this.pendingBuffer, CLOSE_TAG_CANDIDATES);
         const safeLen = this.pendingBuffer.length - holdLen;
         if (safeLen > 0) {
           this.planBuffer += this.pendingBuffer.slice(0, safeLen);
@@ -253,15 +345,17 @@ export class StreamParser {
       }
 
       // Mode: OUTSIDE_PLAN
-      const openIdx = this.pendingBuffer.indexOf(OPEN_PLAN_TAG);
-      if (openIdx !== -1) {
+      const openMatch = OPEN_PLAN_REGEX.exec(this.pendingBuffer);
+      if (openMatch && openMatch.index !== undefined) {
+        const openIdx = openMatch.index;
+        const openLen = openMatch[0].length;
         const beforePlan = this.pendingBuffer.slice(0, openIdx);
         if (beforePlan.length > 0) {
           if (this.checkAndHandleQuestion(beforePlan, true)) {
             return;
           }
         }
-        this.pendingBuffer = this.pendingBuffer.slice(openIdx + OPEN_PLAN_TAG.length);
+        this.pendingBuffer = this.pendingBuffer.slice(openIdx + openLen);
         this.mode = 'IN_PLAN';
         keepProcessing = true;
         continue;
@@ -273,8 +367,9 @@ export class StreamParser {
         return;
       }
 
-      // Hold back any trailing prefix of <plan> or QUESTION:
-      const planHold = getTrailingTagPrefixLength(this.pendingBuffer, OPEN_PLAN_TAG);
+      // Hold back any trailing prefix of open tags or QUESTION:
+      const isStreamStart = this.visibleBuffer.length === 0;
+      const planHold = getTrailingOpenTagHoldLength(this.pendingBuffer, isStreamStart);
       const questionHold = this.getQuestionHoldLength(this.pendingBuffer);
       const holdLen = Math.max(planHold, questionHold);
       const safeLen = this.pendingBuffer.length - holdLen;

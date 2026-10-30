@@ -244,6 +244,16 @@ export async function scanWorkspaceFiles(
 }
 
 /**
+ * Detects whether the user's input is a pure greeting or casual hello without a specific coding instruction.
+ */
+export function isPureGreeting(prompt: string): boolean {
+  const p = prompt.trim().toLowerCase();
+  return /^(merhaba|selam|selamlar|hey|hi|hello|günaydın|gunaydin|iyi günler|iyi gunler|iyi akşamlar|iyi aksamlar)[!.,? ]*$/i.test(
+    p,
+  );
+}
+
+/**
  * Identifies candidate target files from the workspace that match the user's prompt or explicit target flag,
  * and reads their contents using the `read_file` tool.
  */
@@ -257,6 +267,13 @@ export async function gatherWorkspaceContext(
   contextText: string;
   inferredTargetFile?: string;
 }> {
+  if (isPureGreeting(prompt)) {
+    return {
+      contextText:
+        'User sent a greeting. Adhere strictly to the GREETINGS RULE: reply in EXACTLY ONE short, polite sentence (e.g. "Merhaba! Nasıl yardımcı olabilirim?"). Do NOT provide a capability list, menu, or list of workspace files.',
+    };
+  }
+
   const workspaceFiles = await scanWorkspaceFiles(baseDir);
   const promptLower = prompt.toLowerCase();
   const promptWords = promptLower

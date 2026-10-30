@@ -116,4 +116,101 @@ describe('StreamParser', () => {
     assert.deepEqual(blocks[0], { language: 'ts', code: 'const x = 1;' });
     assert.deepEqual(blocks[1], { language: 'json', code: '{"ok": true}' });
   });
+
+  it('hides plan>...</plan> without leading bracket from terminal output', async () => {
+    const terminalChunks: string[] = [];
+    const parser = new StreamParser({
+      debugLogPath: null,
+      onTerminalChunk: (chunk) => terminalChunks.push(chunk),
+    });
+
+    const chunks = [
+      'plan>\n',
+      '1. Intent: User is greeting/chatting (CONVERSATIONAL Q&A MODE).\n',
+      '2. Key facts from workspace context: Some details.\n',
+      '</plan>\n',
+      'Merhaba! Nasıl yardımcı olabilirim?',
+    ];
+
+    for (const chunk of chunks) {
+      parser.feed(chunk);
+    }
+
+    const result = await parser.finalize();
+    const combined = terminalChunks.join('');
+
+    assert.ok(!combined.includes('plan>'));
+    assert.ok(!combined.includes('1. Intent:'));
+    assert.ok(!combined.includes('</plan>'));
+    assert.equal(combined.trim(), 'Merhaba! Nasıl yardımcı olabilirim?');
+    assert.equal(result.visibleOutput.trim(), 'Merhaba! Nasıl yardımcı olabilirim?');
+    assert.ok(result.plan.includes('1. Intent: User is greeting/chatting'));
+  });
+
+  it('hides <think>...</think> DeepSeek reasoning tags from terminal output', async () => {
+    const terminalChunks: string[] = [];
+    const parser = new StreamParser({
+      debugLogPath: null,
+      onTerminalChunk: (chunk) => terminalChunks.push(chunk),
+    });
+
+    const chunks = [
+      '<think>\nDeepSeek R1 reasoning tokens...\n</think>\n',
+      'Here is the solution.',
+    ];
+
+    for (const chunk of chunks) {
+      parser.feed(chunk);
+    }
+
+    const result = await parser.finalize();
+    const combined = terminalChunks.join('');
+
+    assert.ok(!combined.includes('<think>'));
+    assert.ok(!combined.includes('DeepSeek R1 reasoning'));
+    assert.ok(!combined.includes('</think>'));
+    assert.equal(combined.trim(), 'Here is the solution.');
+    assert.equal(result.visibleOutput.trim(), 'Here is the solution.');
+  });
+
+  it('hides [PLAN]...[/PLAN] bracketed blocks and handles fragmented open tag across chunks', async () => {
+    const terminalChunks: string[] = [];
+    const parser = new StreamParser({
+      debugLogPath: null,
+      onTerminalChunk: (chunk) => terminalChunks.push(chunk),
+    });
+
+    const fragmented = [
+      'pl',
+      'an>\nInternal plan line\n</plan>\n',
+      'Hello world!',
+    ];
+
+    for (const chunk of fragmented) {
+      parser.feed(chunk);
+    }
+
+    const result = await parser.finalize();
+    const combined = terminalChunks.join('');
+
+    assert.ok(!combined.includes('plan>'));
+    assert.ok(!combined.includes('Internal plan line'));
+    assert.equal(combined.trim(), 'Hello world!');
+    assert.equal(result.visibleOutput.trim(), 'Hello world!');
+  });
+
+  it('does not swallow or delay ordinary words ending with candidate prefix letters', async () => {
+    const terminalChunks: string[] = [];
+    const parser = new StreamParser({
+      debugLogPath: null,
+      onTerminalChunk: (chunk) => terminalChunks.push(chunk),
+    });
+
+    parser.feed('I can help you build high quality software.');
+    const result = await parser.finalize();
+    const combined = terminalChunks.join('');
+
+    assert.equal(combined, 'I can help you build high quality software.');
+    assert.equal(result.visibleOutput, 'I can help you build high quality software.');
+  });
 });
