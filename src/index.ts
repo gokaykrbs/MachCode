@@ -30,8 +30,12 @@ import {
   getIntegratedTools,
   read_file,
   type OpenAIToolDefinition,
+  type WriteFileResult,
 } from './tools/index.js';
 import { OFFICIAL_NVIDIA_SKILLS_CATALOG, loadNvidiaSkill } from './tools/nvidiaSkills.js';
+import { runAgentLoop, type AgentLoopResult } from './engine/agentLoop.js';
+import { PermissionManager } from './engine/permissions.js';
+import { AGENT_TOOL_DEFINITIONS } from './tools/agentTools.js';
 import {
   createDefaultCommandRegistry,
   type CommandContext,
@@ -129,6 +133,24 @@ export interface MachCodeRunOptions {
    * Optional active readline interface to pause during spinner/stream execution.
    */
   rl?: readline.Interface;
+  /**
+   * When true (default in REPL / agent workflows), uses the autonomous Agent Loop
+   * with tools (list_directory, read_file, glob, grep, edit_file, write_file, run_command) and
+   * interactive diff/command approval across all drives and folders.
+   */
+  agentMode?: boolean;
+  /**
+   * Restrict tools to read-only operations (/ask, /plan, /review).
+   */
+  readOnly?: boolean;
+  /**
+   * Optional custom PermissionManager instance to govern approvals across turns.
+   */
+  permissionManager?: PermissionManager;
+  /**
+   * Optional AbortSignal to interrupt agent operations.
+   */
+  signal?: AbortSignal;
 }
 
 export interface MachCodeRunResult {
@@ -614,6 +636,83 @@ export async function runMachCode(
   let autoHealRetries = 0;
   const deprecatedModels = new Set<string>();
 
+  const shouldUseAgentLoop =
+    options.agentMode ?? Boolean(!options.targetFilePath && !options.askUserQuestion);
+
+  if (shouldUseAgentLoop) {
+    const agentModel =
+      options.heavyModel ?? (activeStrongPool.length > 0 ? activeStrongPool[0] : heavyModel);
+
+    const permissionMgr =
+      options.permissionManager ??
+      new PermissionManager({
+        isAutoApprove: () => Boolean(options.autoApprove),
+        rl: options.rl,
+        writeToStdout,
+      });
+
+    const agentResult = await runAgentLoop({
+      prompt: currentPrompt,
+      cwd: baseDir,
+      apiKey,
+      model: agentModel,
+      candidateModels: activeStrongPool,
+      permissionManager: permissionMgr,
+      history: options.history?.map((m) => ({ role: m.role, content: m.content })),
+      pinnedFiles: options.addedFiles ? Array.from(options.addedFiles) : undefined,
+      readOnly: options.readOnly,
+      timeoutMs: options.timeoutMs,
+      writeToStdout,
+      fetchImpl: options.fetchImpl,
+      onBeforeWrite: options.onBeforeWrite
+        ? (p, dir) => options.onBeforeWrite!(p, dir)
+        : undefined,
+      signal: options.signal,
+    });
+
+    const modifiedFiles: WriteFileResult[] = agentResult.modifiedFiles.map((f) => ({
+      filePath: f,
+      relativePath: path.relative(baseDir, f) || path.basename(f),
+      bytesWritten: 0,
+    }));
+
+    const executionSummary: ExecutionSummary = {
+      modifiedFiles,
+      rejectedFiles: [],
+      skipped: modifiedFiles.length === 0,
+      formattedSummary:
+        modifiedFiles.length > 0
+          ? chalk.green(`✔ Successfully modified ${modifiedFiles.length} file(s):`)
+          : chalk.yellow('No files were modified.'),
+    };
+
+    const raceResult: RaceModelsResult = {
+      winnerModel: agentResult.modelUsed,
+      winnerRole: 'heavy',
+      winnerTier: 'strong',
+      handoffOccurred: false,
+      handoffElapsedMs: null,
+      lightAborted: false,
+      heavyAborted: false,
+      finalTerminalOutput: agentResult.finalResponse,
+      parseResult: {
+        plan: '',
+        extractedCode: '',
+        codeBlocks: [],
+        question: null,
+        isHalted: false,
+        visibleOutput: agentResult.finalResponse,
+      },
+    };
+
+    return {
+      raceResult,
+      executionSummary,
+      toolsLoaded: AGENT_TOOL_DEFINITIONS,
+      questionRounds: 0,
+    };
+  }
+
   while (true) {
     const { contextText, inferredTargetFile } = await gatherWorkspaceContext(
       currentPrompt,
@@ -994,6 +1093,13 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       output,
     });
 
+  let activeAutoApprove = initialAutoApprove;
+  const permissionManager = new PermissionManager({
+    isAutoApprove: () => activeAutoApprove,
+    rl,
+    writeToStdout: options.writeToStdout ?? true,
+  });
+
   // Instruction executor with automatic pre-write file snapshotting & token estimation
   const executeInstruction = async (
     prompt: string,
@@ -1014,6 +1120,8 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         history: sessionHistory,
         addedFiles: addedContextFiles,
         autoApprove: runOpts?.autoApprove ?? commandContext.autoApprove,
+        permissionManager,
+        agentMode: runOpts?.agentMode ?? options.agentMode ?? true,
         confirmBeforeWrite:
           runOpts?.confirmBeforeWrite ??
           options.confirmBeforeWrite ??
@@ -1021,6 +1129,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
             ? (change: ProposedFileChange) =>
                 promptFileChangeApproval(change, rl, () => {
                   commandContext.autoApprove = true;
+                  activeAutoApprove = true;
                 })
             : undefined),
         onBeforeWrite: async (targetPath: string, workspaceDir: string) => {
@@ -1106,7 +1215,13 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     rl,
     shouldExit: false,
     sessionId,
-    autoApprove: initialAutoApprove,
+    get autoApprove() {
+      return activeAutoApprove;
+    },
+    set autoApprove(val: boolean | undefined) {
+      activeAutoApprove = Boolean(val);
+    },
+    permissionManager,
     runMachCode: executeInstruction,
   };
 
@@ -1298,11 +1413,16 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
 
 export * from './config/index.js';
 export * from './prompts/sniper.js';
+export * from './prompts/agent.js';
 export * from './utils/streamParser.js';
 export * from './engine/streamRacer.js';
 export * from './engine/autoRouter.js';
 export * from './engine/executor.js';
+export * from './engine/permissions.js';
+export * from './engine/agentLoop.js';
 export * from './tools/index.js';
+export * from './tools/agentTools.js';
 export * from './tools/nvidiaSkills.js';
 export * from './commands/index.js';
 export * from './ui/autocomplete.js';
+export * from './ui/terminalInput.js';

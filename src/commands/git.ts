@@ -167,12 +167,16 @@ export const approveCommand: SlashCommand = {
 
     if (sub === 'ask' || sub === 'on' || sub === 'confirm' || sub === 'prompt') {
       context.autoApprove = false;
+      context.permissionManager?.reset();
     } else if (sub === 'auto' || sub === 'off' || sub === 'yolo' || sub === 'yes') {
       context.autoApprove = true;
     } else if (sub === 'status') {
       // Just display current status below
     } else {
       context.autoApprove = !context.autoApprove;
+      if (!context.autoApprove) {
+        context.permissionManager?.reset();
+      }
     }
 
     if (context.autoApprove) {

@@ -166,7 +166,10 @@ export const cdCommand: SlashCommand = {
       return;
     }
 
-    const rawTarget = args.trim().replace(/^["']|["']$/g, '');
+    let rawTarget = args.trim().replace(/^["']|["']$/g, '');
+    if (/^[a-zA-Z]:$/.test(rawTarget)) {
+      rawTarget = `${rawTarget}\\`;
+    }
     const resolvedPath = path.resolve(context.baseDir, rawTarget);
 
     try {
@@ -204,7 +207,10 @@ export const lsCommand: SlashCommand = {
   usage: '/ls [path]',
   aliases: ['dir', 'list'],
   execute: async (args: string, context: CommandContext) => {
-    const rawTarget = args.trim() ? args.trim().replace(/^["']|["']$/g, '') : context.baseDir;
+    let rawTarget = args.trim() ? args.trim().replace(/^["']|["']$/g, '') : context.baseDir;
+    if (/^[a-zA-Z]:$/.test(rawTarget)) {
+      rawTarget = `${rawTarget}\\`;
+    }
     const resolvedPath = path.resolve(context.baseDir, rawTarget);
 
     try {

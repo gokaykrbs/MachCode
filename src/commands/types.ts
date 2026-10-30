@@ -1,5 +1,6 @@
 import type readline from 'node:readline/promises';
 import type { SessionMessage, MachCodeRunOptions, MachCodeRunResult } from '../index.js';
+import type { PermissionManager } from '../engine/permissions.js';
 
 export type CommandCategory = 'Context & Memory' | 'Execution & Modes' | 'Safety & Git' | 'System';
 
@@ -32,6 +33,7 @@ export interface CommandContext {
   shouldExit: boolean;
   sessionId?: string;
   autoApprove?: boolean;
+  permissionManager?: PermissionManager;
   runMachCode: (prompt: string, options?: MachCodeRunOptions) => Promise<MachCodeRunResult>;
 }
 
