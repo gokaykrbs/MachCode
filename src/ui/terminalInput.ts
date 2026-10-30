@@ -14,6 +14,7 @@ const handlerStack: KeyHandler[] = [];
 let dispatcherAttached = false;
 let previousRawMode = false;
 
+// eslint-disable-next-line no-control-regex
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[A-Za-z]/g;
 
 export function stripAnsi(text: string): string {
@@ -258,6 +259,7 @@ export async function readLine(promptText: string): Promise<string> {
       if (key.ctrl || key.meta) {
         return;
       }
+      // eslint-disable-next-line no-control-regex
       if (str && !/[\x00-\x1f\x7f]/.test(str)) {
         buffer += str;
         redraw();

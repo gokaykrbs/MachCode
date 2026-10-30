@@ -22,7 +22,7 @@ describe('Autonomous Agent Loop (runAgentLoop)', () => {
         step++;
         const encoder = new TextEncoder();
         const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
-          messages: Array<{ role: string; content?: string; tool_calls?: any[] }>;
+          messages: Array<{ role: string; content?: string; tool_calls?: unknown[] }>;
         };
 
         let sseChunks: string[] = [];
@@ -54,7 +54,9 @@ describe('Autonomous Agent Loop (runAgentLoop)', () => {
         } else if (step === 2) {
           // Verify previous tool message was received by model
           const toolMsg = body.messages.find(
-            (m) => m.role === 'tool' && (m as any).tool_call_id === 'call_list_1',
+            (m) =>
+              m.role === 'tool' &&
+              (m as { tool_call_id?: string }).tool_call_id === 'call_list_1',
           );
           assert.ok(toolMsg, 'Expected tool result message in conversation history');
 

@@ -336,7 +336,7 @@ describe('Slash Command Registry & Command Handler', () => {
 
   it('/exit and its aliases set shouldExit to true and close readline', async () => {
     const registry = createDefaultCommandRegistry();
-    const { context, closed } = createMockContext();
+    const { context } = createMockContext();
 
     assert.equal(context.shouldExit, false);
     await registry.dispatch('/exit', context);

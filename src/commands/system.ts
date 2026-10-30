@@ -1,6 +1,6 @@
 import { exec } from 'node:child_process';
 import chalk from 'chalk';
-import { promptForApiKey, saveConfig, getConfigPath, loadConfig } from '../config/index.js';
+import { promptForApiKey, getConfigPath, loadConfig } from '../config/index.js';
 import { printReplBanner } from '../index.js';
 import type { SlashCommand, CommandContext } from './types.js';
 
@@ -10,7 +10,7 @@ export const helpCommand: SlashCommand = {
   category: 'System',
   usage: '/help',
   aliases: ['h', 'commands'],
-  execute: async (_args: string, context: CommandContext) => {
+  execute: async (_args: string, _context: CommandContext) => {
     console.log(
       chalk.cyan.bold('\n══════════════════════════════════════════════════════════════════'),
     );

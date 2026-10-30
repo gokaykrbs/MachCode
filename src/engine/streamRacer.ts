@@ -1,6 +1,4 @@
-import fs from 'node:fs/promises';
 import { stdout as output } from 'node:process';
-import chalk from 'chalk';
 import { loadConfig, DEFAULT_API_TIMEOUT_MS } from '../config/index.js';
 import { VERIFIED_STRONG_POOL_MODELS, VERIFIED_WEAK_POOL_MODELS } from './autoRouter.js';
 import { buildSniperSystemPrompt } from '../prompts/sniper.js';
@@ -37,8 +35,8 @@ export interface TieredFallbackOptions {
   weakPool?: string[];
   // Backwards compatibility for existing callers/tests:
   handoffWindowMs?: number;
-  onHandoff?: (details: any) => void;
-  onHandoffWindowExpired?: (details: any) => void;
+  onHandoff?: (details: unknown) => void;
+  onHandoffWindowExpired?: (details: unknown) => void;
 }
 
 export type RaceModelsOptions = TieredFallbackOptions;
@@ -577,7 +575,7 @@ export async function tieredFallback(
     for await (const chunk of tokenStream) {
       parser.feed(chunk);
     }
-  } catch (streamErr) {
+  } catch {
     // If stream aborted or errored during delivery, finalize what we have
   }
 

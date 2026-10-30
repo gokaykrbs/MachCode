@@ -1,7 +1,6 @@
 import readline from 'node:readline';
 import type readlinePromises from 'node:readline/promises';
 import chalk from 'chalk';
-import { OFFICIAL_NVIDIA_SKILLS_CATALOG } from '../tools/nvidiaSkills.js';
 import type { CommandRegistry } from '../commands/commandHandler.js';
 
 export interface AutocompleteItem {
@@ -14,7 +13,7 @@ export interface AutocompleteItem {
 /**
  * Builds the comprehensive list of slash commands and official NVIDIA skills for autocomplete.
  */
-export function buildAutocompleteItems(registry?: CommandRegistry): AutocompleteItem[] {
+export function buildAutocompleteItems(_registry?: CommandRegistry): AutocompleteItem[] {
   const items: AutocompleteItem[] = [];
   const seenPrefixes = new Set<string>();
 
@@ -287,6 +286,7 @@ export async function promptWithSuggestions(
       }
 
       // Position terminal cursor at buffer insertion point
+      // eslint-disable-next-line no-control-regex
       const cursorCol = options.promptText.replace(/\x1b\[[0-9;]*m/g, '').length + cursor + 1;
       stdout.write(`\r\x1b[${cursorCol}G`);
     }

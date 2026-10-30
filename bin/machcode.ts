@@ -5,7 +5,6 @@ import {
   DEFAULT_HANDOFF_WINDOW_MS,
   OFFICIAL_NVIDIA_SKILLS_CATALOG,
   ensureConfig,
-  runMachCode,
   startRepl,
 } from '../src/index.js';
 

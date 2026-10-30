@@ -6,7 +6,6 @@ import {
   type PermissionPrompter,
 } from './permissions.js';
 import type { WriteToolPlan, CommandToolPlan } from '../tools/agentTools.js';
-import type { MenuOption } from '../ui/terminalInput.js';
 
 describe('Permission Manager Suite', () => {
   it('extracts command permission prefixes reliably', () => {

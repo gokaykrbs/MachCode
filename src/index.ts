@@ -4,14 +4,10 @@ import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import chalk from 'chalk';
 import ora from 'ora';
-import figlet from 'figlet';
-import boxen from 'boxen';
-import { autoAssignAndSaveModels, ensureConfig, loadConfig } from './config/index.js';
+import { autoAssignAndSaveModels, ensureConfig } from './config/index.js';
 import {
-  autoRouteModels,
   VERIFIED_STRONG_POOL_MODELS,
   VERIFIED_WEAK_POOL_MODELS,
-  type AutoRouteResult,
 } from './engine/autoRouter.js';
 import {
   executeParsedCode,
@@ -34,7 +30,7 @@ import {
   type WriteFileResult,
 } from './tools/index.js';
 import { OFFICIAL_NVIDIA_SKILLS_CATALOG, loadNvidiaSkill } from './tools/nvidiaSkills.js';
-import { runAgentLoop, type AgentLoopResult } from './engine/agentLoop.js';
+import { runAgentLoop } from './engine/agentLoop.js';
 import { PermissionManager } from './engine/permissions.js';
 import { AGENT_TOOL_DEFINITIONS } from './tools/agentTools.js';
 import {
@@ -46,7 +42,6 @@ import {
 import {
   buildAutocompleteItems,
   promptWithSuggestions,
-  type AutocompleteItem,
 } from './ui/autocomplete.js';
 
 export interface SessionMessage {
@@ -1154,7 +1149,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const baseDir = options.baseDir ?? process.cwd();
   let lightModel = options.lightModel ?? config.lightModel;
   let heavyModel = options.heavyModel ?? config.heavyModel;
-  let strongPool: string[] =
+  const strongPool: string[] =
     options.strongPool && options.strongPool.length > 0
       ? [...options.strongPool]
       : options.heavyModel
@@ -1162,7 +1157,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         : config.strongPool && config.strongPool.length > 0
           ? [...config.strongPool]
           : [...VERIFIED_STRONG_POOL_MODELS];
-  let weakPool: string[] =
+  const weakPool: string[] =
     options.weakPool && options.weakPool.length > 0
       ? [...options.weakPool]
       : options.lightModel
@@ -1246,9 +1241,12 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
             : undefined),
         onBeforeWrite: async (targetPath: string, workspaceDir: string) => {
           try {
-            const existing = await read_file(targetPath, workspaceDir);
+            const absPath = path.isAbsolute(targetPath)
+              ? targetPath
+              : path.resolve(workspaceDir, targetPath);
+            const existing = await fs.readFile(absPath, 'utf-8');
             fileSnapshots.push({
-              file: targetPath,
+              file: absPath,
               previousContent: existing,
               timestamp: Date.now(),
             });

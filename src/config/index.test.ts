@@ -5,7 +5,6 @@ import {
   autoRouteModels,
   extractModelParamCount,
   isUsableGenerativeModel,
-  scoreModelRole,
 } from '../engine/autoRouter.js';
 
 describe('AutoRouter & Autonomous Model Routing', () => {
@@ -59,7 +58,7 @@ describe('AutoRouter & Autonomous Model Routing', () => {
   it('autoAssignAndSaveModels fetches, routes, and saves models silently', async () => {
     const existingConfig = await loadConfig();
     try {
-      const mockFetch: typeof fetch = async (input, init) => {
+      const mockFetch: typeof fetch = async (input, _init) => {
         const url = String(input);
         assert.ok(url.includes('/models'));
 

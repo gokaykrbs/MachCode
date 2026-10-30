@@ -8,7 +8,6 @@ import {
   resolveAnyPath,
   globToRegExp,
   isInsideDir,
-  displayPath,
 } from './agentTools.js';
 
 describe('Agent Tools Suite', () => {

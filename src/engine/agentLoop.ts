@@ -74,7 +74,7 @@ interface AccumulatedToolCall {
   arguments: string;
 }
 
-function truncateArgs(argsStr: string, maxLen = 80): string {
+function _truncateArgs(argsStr: string, maxLen = 80): string {
   try {
     const parsed = JSON.parse(argsStr);
     const entries = Object.entries(parsed)

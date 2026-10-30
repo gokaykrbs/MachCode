@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "description": "Zero-hallucination, high-speed AI code editor CLI powered by Streaming Handoff Racing on NVIDIA NIM.",
   "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "bin": {
-    "mach": "./dist/bin/machcode.js"
+    "mach": "./dist/bin/machcode.js",
+    "machcode": "./dist/bin/machcode.js"
   },
   "files": [
     "dist"
@@ -14,6 +17,8 @@
     "dev": "tsc && node dist/bin/machcode.js",
     "test": "tsc && node --test --test-concurrency=1 \"dist/**/*.test.js\"",
     "lint": "eslint \"src/**/*.ts\" \"bin/**/*.ts\"",
+    "lint:fix": "eslint --fix \"src/**/*.ts\" \"bin/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.ts\" \"bin/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"bin/**/*.ts\"",
     "prepare": "tsc"
@@ -23,10 +28,20 @@
     "cli",
     "code-editor",
     "nvidia-nim",
-    "llm"
+    "llm",
+    "developer-tools",
+    "agent"
   ],
-  "author": "",
+  "author": "Gökay Karabaş",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gokaykrbs/MachCode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gokaykrbs/MachCode/issues"
+  },
+  "homepage": "https://github.com/gokaykrbs/MachCode#readme",
   "dependencies": {
     "@inquirer/prompts": "^8.7.3",
     "boxen": "^9.0.0",

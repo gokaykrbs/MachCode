@@ -94,6 +94,7 @@ describe('End-to-End CLI Execution Flow (runMachCode)', () => {
       });
 
       assert.equal(result.questionRounds, 1);
+      assert.ok(callCount >= 2);
       assert.equal(askedQuestions.length, 1);
       assert.equal(askedQuestions[0], 'Should login require a minimum password length?');
       assert.equal(result.executionSummary.skipped, false);
