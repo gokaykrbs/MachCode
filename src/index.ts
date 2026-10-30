@@ -1233,7 +1233,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         addedFiles: addedContextFiles,
         autoApprove: runOpts?.autoApprove ?? commandContext.autoApprove,
         permissionManager,
-        agentMode: runOpts?.agentMode ?? options.agentMode ?? false,
+        agentMode: runOpts?.agentMode ?? options.agentMode ?? true,
         confirmBeforeWrite:
           runOpts?.confirmBeforeWrite ??
           options.confirmBeforeWrite ??

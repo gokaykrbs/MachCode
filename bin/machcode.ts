@@ -51,6 +51,7 @@ program
         heavyModel: options.heavyModel,
         handoffWindowMs,
         autoApprove: Boolean(options.autoApprove || options.yes),
+        agentMode: true,
       });
     },
   );

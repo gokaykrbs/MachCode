@@ -15,7 +15,7 @@ export const planCommand: SlashCommand = {
 
     console.log(chalk.cyan.bold('\n🧠 Generating Architectural Plan (Read-Only Mode)...\n'));
 
-    const planPrompt = `[STRICT PLAN-ONLY MODE: Do NOT output code fences or modify files. Formulate a comprehensive technical plan inside <plan>...</plan> detailing architecture, affected files, edge cases, and steps]:\n${args.trim()}`;
+    const planPrompt = `[STRICT PLAN-ONLY MODE: Do NOT output code fences or modify files. Formulate a comprehensive, structured technical architectural blueprint in crisp Markdown detailing architecture, affected files, edge cases, and steps]:\n${args.trim()}`;
 
     await context.runMachCode(planPrompt, {
       baseDir: context.baseDir,

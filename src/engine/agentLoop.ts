@@ -375,20 +375,38 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
       throw err;
     }
 
-    // If model rejected tools with 400, switch to fallback mode
-    if (stepResult.status === 400 && toolsAvailable) {
-      toolsAvailable = false;
-      const fallbackPrompt = buildAgentSystemPrompt({
-        cwd,
-        pinnedFiles: options.pinnedFiles,
-        readOnly: options.readOnly,
-        toolsUnavailable: true,
-      });
-      messages[0] = { role: 'system', content: fallbackPrompt };
-      continue;
-    }
+    // If model returned an HTTP error (404, 410, 500, etc.), auto-heal to next candidate model
+    if (stepResult.error || stepResult.status >= 400) {
+      const remainingCandidates = (options.candidateModels ?? []).filter(
+        (m) => m !== activeModel,
+      );
+      if (remainingCandidates.length > 0) {
+        const nextModel = remainingCandidates[0];
+        if (writeToStdout) {
+          console.log(
+            chalk.yellow(
+              `\n⚠️  Model "${activeModel}" returned HTTP ${stepResult.status}. Auto-routing to "${nextModel}"...\n`,
+            ),
+          );
+        }
+        activeModel = nextModel;
+        options.candidateModels = remainingCandidates.slice(1);
+        continue;
+      }
 
-    if (stepResult.error) {
+      // If model rejected tools with 400, switch to fallback mode
+      if (stepResult.status === 400 && toolsAvailable) {
+        toolsAvailable = false;
+        const fallbackPrompt = buildAgentSystemPrompt({
+          cwd,
+          pinnedFiles: options.pinnedFiles,
+          readOnly: options.readOnly,
+          toolsUnavailable: true,
+        });
+        messages[0] = { role: 'system', content: fallbackPrompt };
+        continue;
+      }
+
       throw new Error(`API returned HTTP ${stepResult.status}: ${stepResult.error}`);
     }
 
