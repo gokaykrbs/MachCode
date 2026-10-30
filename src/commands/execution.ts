@@ -163,10 +163,34 @@ ${fileContent}
   },
 };
 
+export const agentCommand: SlashCommand = {
+  name: 'agent',
+  description: 'Run in autonomous multi-step agent mode with tool calling across all drives',
+  category: 'Execution & Modes',
+  usage: '/agent <task description>',
+  aliases: ['auto', 'loop'],
+  execute: async (args: string, context: CommandContext) => {
+    if (!args || args.trim().length === 0) {
+      console.log(chalk.yellow('Usage: /agent <task description>'));
+      return;
+    }
+
+    console.log(chalk.cyan.bold('\n🤖 Starting Autonomous Agent Mode...\n'));
+
+    await context.runMachCode(args.trim(), {
+      baseDir: context.baseDir,
+      agentMode: true,
+      writeToStdout: true,
+      history: context.sessionHistory,
+    });
+  },
+};
+
 export const executionCommands: SlashCommand[] = [
   askCommand,
   planCommand,
   heavyCommand,
   fastCommand,
   reviewCommand,
+  agentCommand,
 ];

@@ -113,10 +113,13 @@ export function resolveWorkspacePath(filePath: string, baseDir: string = process
     throw new Error('File path cannot be empty.');
   }
 
-  const trimmed = filePath.trim();
+  let trimmed = filePath.trim().replace(/^["'`]|["'`]$/g, '');
+  if (/^[a-zA-Z]:$/.test(trimmed)) {
+    trimmed = `${trimmed}\\`;
+  }
 
-  // If path is an explicit absolute path (e.g. D:\... or C:\... or /...), resolve directly
-  if (path.isAbsolute(trimmed)) {
+  // If path is an explicit absolute path or starts with a drive letter (e.g. E:\... or D:/... or /...)
+  if (path.isAbsolute(trimmed) || /^[a-zA-Z]:[/\\]/.test(trimmed)) {
     return path.resolve(trimmed);
   }
 

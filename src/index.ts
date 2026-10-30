@@ -25,6 +25,7 @@ import {
   type RaceModelsResult,
 } from './engine/streamRacer.js';
 import { buildSniperSystemPrompt } from './prompts/sniper.js';
+import { buildAgentSystemPrompt } from './prompts/agent.js';
 import {
   ALL_TOOLS,
   getIntegratedTools,
@@ -368,6 +369,58 @@ export async function gatherWorkspaceContext(
         fileContentsSections.push(
           `### Drive & Path Discovered (${driveRoot})\n${summary}\n(Instruction: The user can switch active workspace to this drive anytime with \`/cd ${driveRoot}\` or read/write files at full paths like \`${driveRoot}folder/file\`).`,
         );
+
+        // Intelligent discovery: if the prompt is looking for a project or folder by name (e.g. "Machcode")
+        const candidateKeywords = promptWords.filter(
+          (w) =>
+            w.length >= 4 &&
+            !['deki', 'daki', 'ulas', 'ulaş', 'bana', 'bunu', 'olan', 'goster', 'göster', 'klasor', 'klasör', 'drive'].includes(w),
+        );
+        for (const kw of candidateKeywords) {
+          const directMatch = driveEntries.filter((e) => e.name.toLowerCase().includes(kw));
+          if (directMatch.length > 0) {
+            fileContentsSections.push(
+              `### Matched Items on ${driveRoot} for "${kw}":\n${directMatch.map((m) => `- ${driveRoot}${m.name}`).join('\n')}`,
+            );
+          } else {
+            // Not directly at root of this drive; scan other mounted drives (e.g. D:, C:) to help the user locate it
+            for (const otherLetter of ['D', 'C', 'E'].filter((l) => l !== driveLetter)) {
+              const otherRoot = `${otherLetter}:\\`;
+              try {
+                const otherEntries = await fs.readdir(otherRoot, { withFileTypes: true });
+                for (const oe of otherEntries) {
+                  if (oe.name.toLowerCase().includes(kw)) {
+                    fileContentsSections.push(
+                      `### Discovered Location for "${kw}":\nNotice: "${kw}" was not found directly on drive ${driveRoot}, but was located at: \`${otherRoot}${oe.name}\`\n(Instruction: Inform the user that "${kw}" is located on ${otherRoot} and specify the full path).`,
+                    );
+                  }
+                  if (
+                    oe.isDirectory() &&
+                    ['my projects', 'projects', 'dev', 'workspace', 'repos'].includes(
+                      oe.name.toLowerCase(),
+                    )
+                  ) {
+                    try {
+                      const subEnts = await fs.readdir(path.join(otherRoot, oe.name), {
+                        withFileTypes: true,
+                      });
+                      const subMatch = subEnts.filter((s) => s.name.toLowerCase().includes(kw));
+                      if (subMatch.length > 0) {
+                        fileContentsSections.push(
+                          `### Discovered Location for "${kw}":\nNotice: "${kw}" was not found directly on drive ${driveRoot}, but was located at: \`${path.join(otherRoot, oe.name, subMatch[0].name)}\`\n(Instruction: Inform the user that "${kw}" is located at \`${path.join(otherRoot, oe.name, subMatch[0].name)}\`).`,
+                        );
+                      }
+                    } catch {
+                      // Ignore sub-read errors
+                    }
+                  }
+                }
+              } catch {
+                // Ignore unmounted drives
+              }
+            }
+          }
+        }
       }
     } catch {
       // Drive not present or not mounted
@@ -636,12 +689,54 @@ export async function runMachCode(
   let autoHealRetries = 0;
   const deprecatedModels = new Set<string>();
 
-  const shouldUseAgentLoop =
-    options.agentMode ?? Boolean(!options.targetFilePath && !options.askUserQuestion);
+  if (options.agentMode === true) {
+    const uniqueProviders = Array.from(
+      new Set(activeStrongPool.map((m) => m.split('/')[0] || m)),
+    );
+    const providerList =
+      uniqueProviders.length > 5
+        ? `${uniqueProviders.slice(0, 5).join(', ')} +${uniqueProviders.length - 5} more`
+        : uniqueProviders.join(', ');
+    const spinnerText =
+      activeStrongPool.length > 1
+        ? `Racing ${activeStrongPool.length} models in parallel (${providerList})...`
+        : `Connecting to model (${activeStrongPool[0] ?? heavyModel})...`;
 
-  if (shouldUseAgentLoop) {
-    const agentModel =
-      options.heavyModel ?? (activeStrongPool.length > 0 ? activeStrongPool[0] : heavyModel);
+    const spinner = writeToStdout
+      ? ora({
+          text: chalk.cyan.bold(spinnerText),
+          color: 'cyan',
+          stream: process.stdout,
+        }).start()
+      : null;
+
+    let raceWinner = heavyModel;
+    try {
+      const initialRace = await raceModels(currentPrompt, lightModel, heavyModel, {
+        apiKey,
+        systemPrompt: buildAgentSystemPrompt({ cwd: baseDir, readOnly: options.readOnly }),
+        strongPool: activeStrongPool,
+        weakPool: activeWeakPool,
+        handoffWindowMs: options.handoffWindowMs,
+        timeoutMs: options.timeoutMs,
+        writeToStdout: false,
+        fetchImpl: options.fetchImpl,
+      });
+      raceWinner = initialRace.winnerModel;
+    } catch {
+      // Fallback to default model if initial race failed
+    } finally {
+      if (spinner && spinner.isSpinning) {
+        spinner.stop();
+        spinner.clear();
+      }
+    }
+
+    if (writeToStdout) {
+      console.log(
+        chalk.magenta.bold(`⚡ Agent locked onto winning model (${raceWinner})\n`),
+      );
+    }
 
     const permissionMgr =
       options.permissionManager ??
@@ -655,7 +750,7 @@ export async function runMachCode(
       prompt: currentPrompt,
       cwd: baseDir,
       apiKey,
-      model: agentModel,
+      model: raceWinner,
       candidateModels: activeStrongPool,
       permissionManager: permissionMgr,
       history: options.history?.map((m) => ({ role: m.role, content: m.content })),
@@ -934,7 +1029,7 @@ export async function runMachCode(
 
     const effectiveConfirm =
       options.confirmBeforeWrite ??
-      (options.autoApprove === false
+      (!options.autoApprove && (writeToStdout || Boolean(options.rl))
         ? (change: ProposedFileChange) => promptFileChangeApproval(change, options.rl)
         : undefined);
 
@@ -1121,7 +1216,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         addedFiles: addedContextFiles,
         autoApprove: runOpts?.autoApprove ?? commandContext.autoApprove,
         permissionManager,
-        agentMode: runOpts?.agentMode ?? options.agentMode ?? true,
+        agentMode: runOpts?.agentMode ?? options.agentMode ?? false,
         confirmBeforeWrite:
           runOpts?.confirmBeforeWrite ??
           options.confirmBeforeWrite ??
