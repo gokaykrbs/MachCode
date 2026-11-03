@@ -38,7 +38,8 @@ export function loadProjectInstructions(cwd: string): { file: string; content: s
     const full = path.join(cwd, name);
     try {
       const content = fs.readFileSync(full, 'utf-8');
-      const clipped = content.length > 8000 ? `${content.slice(0, 8000)}\n... (truncated)` : content;
+      const clipped =
+        content.length > 8000 ? `${content.slice(0, 8000)}\n... (truncated)` : content;
       return { file: name, content: clipped };
     } catch {
       // Not present
@@ -121,7 +122,10 @@ This request is READ-ONLY. Only list_directory, read_file, glob and grep are ava
 - If the request is ambiguous and exploring cannot resolve it, ask one clear question and stop.`);
 
   if (options.pinnedFiles && options.pinnedFiles.length > 0) {
-    const list = options.pinnedFiles.slice(0, 50).map((f) => `- ${f}`).join('\n');
+    const list = options.pinnedFiles
+      .slice(0, 50)
+      .map((f) => `- ${f}`)
+      .join('\n');
     sections.push(`# Files pinned by the user (/add)
 The user explicitly added these files to the context. Read them with read_file when relevant:
 ${list}`);

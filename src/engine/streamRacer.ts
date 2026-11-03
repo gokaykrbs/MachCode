@@ -259,7 +259,9 @@ async function* streamChatCompletionTokens(params: {
 
         try {
           const parsed = JSON.parse(payload) as {
-            choices?: Array<{ delta?: { content?: string | null; reasoning_content?: string | null } }>;
+            choices?: Array<{
+              delta?: { content?: string | null; reasoning_content?: string | null };
+            }>;
           };
           const delta = parsed.choices?.[0]?.delta;
           const reasoningChunk = delta?.reasoning_content;
@@ -370,7 +372,9 @@ async function executeTier(
         (combined as unknown as { errors: Map<string, unknown> }).errors = errorMap;
         // Check if any error was a timeout
         const hadTimeout = Array.from(errorMap.values()).some(
-          (e) => (e as { isTimeout?: boolean })?.isTimeout || (e instanceof Error && e.message.includes('10s')),
+          (e) =>
+            (e as { isTimeout?: boolean })?.isTimeout ||
+            (e instanceof Error && e.message.includes('10s')),
         );
         if (hadTimeout) {
           (combined as unknown as { isTimeout: boolean }).isTimeout = true;
@@ -393,10 +397,14 @@ async function executeTier(
           if (uniqueModels.length > 1 && model.includes('bolt-e4b')) {
             await new Promise<void>((r) => {
               const t = setTimeout(r, 1800);
-              controller.signal.addEventListener('abort', () => {
-                clearTimeout(t);
-                r();
-              }, { once: true });
+              controller.signal.addEventListener(
+                'abort',
+                () => {
+                  clearTimeout(t);
+                  r();
+                },
+                { once: true },
+              );
             });
             if (resolved || controller.signal.aborted) {
               return;
@@ -450,7 +458,7 @@ async function executeTier(
 
 /**
  * Multi-Model Parallel Racing & Tiered Priority Fallback Engine.
- * 
+ *
  * 1. Primary: Fires parallel requests across all models in the StrongPool.
  * 2. As soon as the fastest strong model returns 200 OK and emits its first actual content token,
  *    instantly locks onto it, streams it to the UI, and aborts all competing requests.
@@ -471,14 +479,16 @@ export async function tieredFallback(
   const writeToStdout = options.writeToStdout ?? true;
 
   // Resolve StrongPool and WeakPool
-  const strongPool: string[] = options.strongPool ??
+  const strongPool: string[] =
+    options.strongPool ??
     (Array.isArray(heavyModelOrStrongPool) && heavyModelOrStrongPool.length > 0
       ? heavyModelOrStrongPool
       : typeof heavyModelOrStrongPool === 'string' && heavyModelOrStrongPool.trim().length > 0
         ? [heavyModelOrStrongPool.trim()]
         : [...VERIFIED_STRONG_POOL_MODELS]);
 
-  const weakPool: string[] = options.weakPool ??
+  const weakPool: string[] =
+    options.weakPool ??
     (Array.isArray(lightModelOrWeakPool) && lightModelOrWeakPool.length > 0
       ? lightModelOrWeakPool
       : typeof lightModelOrWeakPool === 'string' && lightModelOrWeakPool.trim().length > 0
@@ -554,7 +564,9 @@ export async function tieredFallback(
 
       const strongMsg = strongError instanceof Error ? strongError.message : String(strongError);
       const weakMsg = weakError instanceof Error ? weakError.message : String(weakError);
-      throw new Error(`Both Strong and Fallback tiers failed. Strong: ${strongMsg} | Weak: ${weakMsg}`);
+      throw new Error(
+        `Both Strong and Fallback tiers failed. Strong: ${strongMsg} | Weak: ${weakMsg}`,
+      );
     }
   }
 

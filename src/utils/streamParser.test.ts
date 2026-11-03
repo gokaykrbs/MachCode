@@ -180,11 +180,7 @@ describe('StreamParser', () => {
       onTerminalChunk: (chunk) => terminalChunks.push(chunk),
     });
 
-    const fragmented = [
-      'pl',
-      'an>\nInternal plan line\n</plan>\n',
-      'Hello world!',
-    ];
+    const fragmented = ['pl', 'an>\nInternal plan line\n</plan>\n', 'Hello world!'];
 
     for (const chunk of fragmented) {
       parser.feed(chunk);

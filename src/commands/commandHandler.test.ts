@@ -74,6 +74,8 @@ function createMockContext(overrides: Partial<CommandContext> = {}): {
     };
   };
 
+  let currentMode: 'build' | 'plan' = 'build';
+
   const context: CommandContext = {
     baseDir: process.cwd(),
     lightModel: 'meta/llama-3.3-70b-instruct',
@@ -86,6 +88,15 @@ function createMockContext(overrides: Partial<CommandContext> = {}): {
     tokenStats,
     rl: mockRl,
     shouldExit: false,
+    get mode() {
+      return currentMode;
+    },
+    set mode(v: 'build' | 'plan' | undefined) {
+      currentMode = v ?? 'build';
+    },
+    setMode: (v: 'build' | 'plan') => {
+      currentMode = v;
+    },
     runMachCode: mockRunMachCode,
     ...overrides,
   };
@@ -321,7 +332,10 @@ describe('Slash Command Registry & Command Handler', () => {
     assert.equal(handledList, true);
 
     // 2. /skill cuopt with a task executes with enriched prompt
-    const handledTask = await registry.dispatch('/skill cuopt Solve vehicle routing problem', context);
+    const handledTask = await registry.dispatch(
+      '/skill cuopt Solve vehicle routing problem',
+      context,
+    );
     assert.equal(handledTask, true);
     assert.equal(executedPrompts.length, 1);
     assert.ok(executedPrompts[0].prompt.includes('[ACTIVE NVIDIA SKILL: cuOpt'));
@@ -349,5 +363,27 @@ describe('Slash Command Registry & Command Handler', () => {
     const { context: context3 } = createMockContext();
     await registry.dispatch('/q', context3);
     assert.equal(context3.shouldExit, true);
+  });
+
+  it('/mode and /build switch session between plan and build modes', async () => {
+    const registry = createDefaultCommandRegistry();
+    const { context } = createMockContext();
+
+    assert.equal(context.mode, 'build');
+
+    await registry.dispatch('/mode plan', context);
+    assert.equal(context.mode, 'plan');
+
+    await registry.dispatch('/build', context);
+    assert.equal(context.mode, 'build');
+
+    await registry.dispatch('/mode toggle', context);
+    assert.equal(context.mode, 'plan');
+
+    await registry.dispatch('/mode toggle', context);
+    assert.equal(context.mode, 'build');
+
+    await registry.dispatch('/plan', context);
+    assert.equal(context.mode, 'plan');
   });
 });

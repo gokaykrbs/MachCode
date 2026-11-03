@@ -143,9 +143,7 @@ export const configCommand: SlashCommand = {
     for (const m of strongPool) {
       console.log(`                ${chalk.magenta('•')} ${chalk.white(m)}`);
     }
-    console.log(
-      `  Weak Pool:    ${chalk.blue.bold(`${weakPool.length} fast fallback models`)}`,
-    );
+    console.log(`  Weak Pool:    ${chalk.blue.bold(`${weakPool.length} fast fallback models`)}`);
     for (const m of weakPool) {
       console.log(`                ${chalk.blue('•')} ${chalk.gray(m)}`);
     }
@@ -213,9 +211,8 @@ export const raceCommand: SlashCommand = {
       return;
     }
 
-    const { VERIFIED_STRONG_POOL_MODELS, VERIFIED_WEAK_POOL_MODELS } = await import(
-      '../engine/autoRouter.js'
-    );
+    const { VERIFIED_STRONG_POOL_MODELS, VERIFIED_WEAK_POOL_MODELS } =
+      await import('../engine/autoRouter.js');
     const pool = Array.from(
       new Set([
         ...(context.strongPool ?? existing?.strongPool ?? VERIFIED_STRONG_POOL_MODELS),
@@ -275,7 +272,9 @@ export const raceCommand: SlashCommand = {
     let okRank = 0;
     for (const r of results) {
       if (r.ok) {
-        const badge = medals[okRank] ? chalk.yellow.bold(medals[okRank].padEnd(8)) : chalk.green('✔ OK    ');
+        const badge = medals[okRank]
+          ? chalk.yellow.bold(medals[okRank].padEnd(8))
+          : chalk.green('✔ OK    ');
         okRank++;
         console.log(
           `  ${badge} ${chalk.white.bold(r.model.padEnd(46))} ${chalk.green(`${r.latencyMs}ms`)} ${chalk.gray(`(HTTP ${r.status})`)}`,

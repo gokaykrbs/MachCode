@@ -123,7 +123,9 @@ export const skillsCommand: SlashCommand = {
     const matched = resolveSkillByName(firstWord);
     if (!matched) {
       console.log(
-        chalk.red(`\n✖ Unknown NVIDIA skill "${firstWord}". Type /skills to view available skills.\n`),
+        chalk.red(
+          `\n✖ Unknown NVIDIA skill "${firstWord}". Type /skills to view available skills.\n`,
+        ),
       );
       return;
     }
@@ -191,14 +193,44 @@ export function createSkillShortcut(
 }
 
 export const skillShortcutCommands: SlashCommand[] = [
-  createSkillShortcut('cuopt', 'cuopt-routing-api-python', 'cuOpt', 'GPU vehicle routing & LP/MILP optimization'),
-  createSkillShortcut('cudf', 'accelerated-computing-cudf', 'cuDF', 'GPU DataFrames, pandas acceleration & ETL'),
+  createSkillShortcut(
+    'cuopt',
+    'cuopt-routing-api-python',
+    'cuOpt',
+    'GPU vehicle routing & LP/MILP optimization',
+  ),
+  createSkillShortcut(
+    'cudf',
+    'accelerated-computing-cudf',
+    'cuDF',
+    'GPU DataFrames, pandas acceleration & ETL',
+  ),
   createSkillShortcut('cudaq', 'cudaq-guide', 'CUDA-Q', 'Quantum-classical hybrid programming'),
-  createSkillShortcut('deepstream', 'deepstream-dev', 'DeepStream', 'Vision AI & video analytics pipelines'),
-  createSkillShortcut('doca', 'doca-programming-guide', 'DOCA', 'BlueField DPU & ConnectX networking'),
+  createSkillShortcut(
+    'deepstream',
+    'deepstream-dev',
+    'DeepStream',
+    'Vision AI & video analytics pipelines',
+  ),
+  createSkillShortcut(
+    'doca',
+    'doca-programming-guide',
+    'DOCA',
+    'BlueField DPU & ConnectX networking',
+  ),
   createSkillShortcut('dali', 'dali-dynamic-mode', 'DALI', 'GPU data loading & preprocessing'),
-  createSkillShortcut('bionemo', 'bionemo-drug-discovery-pipeline', 'BioNeMo', 'Biomolecular drug discovery & protein design'),
-  createSkillShortcut('dynamo', 'dynamo-recipe-runner', 'Dynamo', 'Distributed LLM inference on Kubernetes'),
+  createSkillShortcut(
+    'bionemo',
+    'bionemo-drug-discovery-pipeline',
+    'BioNeMo',
+    'Biomolecular drug discovery & protein design',
+  ),
+  createSkillShortcut(
+    'dynamo',
+    'dynamo-recipe-runner',
+    'Dynamo',
+    'Distributed LLM inference on Kubernetes',
+  ),
 ];
 
 export const skillsCommands: SlashCommand[] = [skillsCommand, ...skillShortcutCommands];

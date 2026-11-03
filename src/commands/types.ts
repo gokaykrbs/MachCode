@@ -34,6 +34,8 @@ export interface CommandContext {
   sessionId?: string;
   autoApprove?: boolean;
   permissionManager?: PermissionManager;
+  mode?: 'build' | 'plan';
+  setMode?: (mode: 'build' | 'plan') => void;
   runMachCode: (prompt: string, options?: MachCodeRunOptions) => Promise<MachCodeRunResult>;
 }
 

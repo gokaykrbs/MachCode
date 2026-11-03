@@ -1,9 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  buildAutocompleteItems,
-  filterAutocompleteItems,
-} from './autocomplete.js';
+import { buildAutocompleteItems, filterAutocompleteItems } from './autocomplete.js';
 import { resolveSkillByName } from '../commands/skills.js';
 
 describe('Autocomplete & Skills Suggestion System', () => {

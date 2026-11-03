@@ -42,8 +42,23 @@ const MAX_TOOL_OUTPUT_CHARS = 30000;
 const MAX_GLOB_RESULTS = 200;
 const MAX_GREP_MATCHES = 120;
 const SEARCH_TIME_BUDGET_MS = 20000;
-const DEFAULT_COMMAND_TIMEOUT_MS = 120000;
+const DEFAULT_COMMAND_TIMEOUT_MS = 60000;
 const MAX_COMMAND_TIMEOUT_MS = 600000;
+
+/**
+ * Identifies sensitive files that must be excluded from automated searches and reading by default,
+ * protecting secrets and credentials (.env, .env.local, .git, etc.) as mandated by Phase 2 security policy.
+ */
+export function isIgnoredFile(filePath: string): boolean {
+  const base = path.basename(filePath).toLowerCase();
+  if (base === '.env' || base.startsWith('.env.') || base.endsWith('.env')) {
+    return true;
+  }
+  if (base === '.git' || base.startsWith('.git')) {
+    return true;
+  }
+  return false;
+}
 
 export class ToolError extends Error {}
 
@@ -120,7 +135,21 @@ export const AGENT_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
     'list_directory',
     'List files and folders inside a directory. Works on any drive or absolute path (e.g. "E:\\\\", "D:\\\\My Projects", "src"). Use this first to explore a folder the user mentions.',
     {
-      path: { type: 'string', description: 'Directory path, relative to the working directory or absolute (any drive).' },
+      path: {
+        type: 'string',
+        description: 'Directory path, relative to the working directory or absolute (any drive).',
+      },
+    },
+    ['path'],
+  ),
+  fn(
+    'list_dir',
+    'Alias for list_directory. List files and folders inside a directory.',
+    {
+      path: {
+        type: 'string',
+        description: 'Directory path, relative to the working directory or absolute.',
+      },
     },
     ['path'],
   ),
@@ -129,8 +158,14 @@ export const AGENT_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
     'Read a text file. Returns numbered lines. For large files use offset/limit to page through it. Always read a file before editing it.',
     {
       path: { type: 'string', description: 'File path, relative or absolute (any drive).' },
-      offset: { type: 'integer', description: '1-based line number to start reading from (optional).' },
-      limit: { type: 'integer', description: 'Maximum number of lines to read (optional, default 2000).' },
+      offset: {
+        type: 'integer',
+        description: '1-based line number to start reading from (optional).',
+      },
+      limit: {
+        type: 'integer',
+        description: 'Maximum number of lines to read (optional, default 2000).',
+      },
     },
     ['path'],
   ),
@@ -139,7 +174,11 @@ export const AGENT_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
     'Find files by glob pattern (e.g. "**/*.ts", "src/**/index.*"). Skips node_modules, .git, dist and similar folders.',
     {
       pattern: { type: 'string', description: 'Glob pattern relative to the search directory.' },
-      path: { type: 'string', description: 'Directory to search in (optional, defaults to the working directory). Can be on any drive.' },
+      path: {
+        type: 'string',
+        description:
+          'Directory to search in (optional, defaults to the working directory). Can be on any drive.',
+      },
     },
     ['pattern'],
   ),
@@ -148,8 +187,15 @@ export const AGENT_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
     'Search file contents with a regular expression. Returns matching lines as path:line: text.',
     {
       pattern: { type: 'string', description: 'JavaScript regular expression to search for.' },
-      path: { type: 'string', description: 'File or directory to search (optional, defaults to the working directory). Can be on any drive.' },
-      include: { type: 'string', description: 'Optional glob filter for file names, e.g. "*.ts" or "*.{js,jsx}".' },
+      path: {
+        type: 'string',
+        description:
+          'File or directory to search (optional, defaults to the working directory). Can be on any drive.',
+      },
+      include: {
+        type: 'string',
+        description: 'Optional glob filter for file names, e.g. "*.ts" or "*.{js,jsx}".',
+      },
       case_insensitive: { type: 'boolean', description: 'Case-insensitive search (optional).' },
     },
     ['pattern'],
@@ -159,9 +205,15 @@ export const AGENT_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
     'Replace an exact string in an existing file. old_string must match the file content exactly (including indentation) and be unique unless replace_all is true. The user reviews a diff and must approve the change.',
     {
       path: { type: 'string', description: 'File path, relative or absolute (any drive).' },
-      old_string: { type: 'string', description: 'Exact text to replace. Include enough surrounding lines to make it unique.' },
+      old_string: {
+        type: 'string',
+        description: 'Exact text to replace. Include enough surrounding lines to make it unique.',
+      },
       new_string: { type: 'string', description: 'Replacement text.' },
-      replace_all: { type: 'boolean', description: 'Replace every occurrence (optional, default false).' },
+      replace_all: {
+        type: 'boolean',
+        description: 'Replace every occurrence (optional, default false).',
+      },
     },
     ['path', 'old_string', 'new_string'],
   ),
@@ -169,7 +221,11 @@ export const AGENT_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
     'write_file',
     'Create a new file or completely overwrite an existing one with the given content. Prefer edit_file for small changes to existing files. The user reviews a diff and must approve the change.',
     {
-      path: { type: 'string', description: 'File path, relative or absolute (any drive). Parent folders are created automatically.' },
+      path: {
+        type: 'string',
+        description:
+          'File path, relative or absolute (any drive). Parent folders are created automatically.',
+      },
       content: { type: 'string', description: 'Complete file content.' },
     },
     ['path', 'content'],
@@ -179,14 +235,44 @@ export const AGENT_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
     'Run a shell command (PowerShell on Windows, bash elsewhere) and return its output and exit code. Use for builds, tests, git, package managers. The user must approve each command.',
     {
       command: { type: 'string', description: 'The command line to execute.' },
-      cwd: { type: 'string', description: 'Working directory for the command (optional, defaults to the working directory).' },
-      timeout_ms: { type: 'integer', description: 'Timeout in milliseconds (optional, default 120000, max 600000).' },
+      cwd: {
+        type: 'string',
+        description:
+          'Working directory for the command (optional, defaults to the working directory).',
+      },
+      timeout_ms: {
+        type: 'integer',
+        description: 'Timeout in milliseconds (optional, default 60000, max 600000).',
+      },
+    },
+    ['command'],
+  ),
+  fn(
+    'bash',
+    'Alias for run_command. Run a shell command (PowerShell on Windows, bash elsewhere) and return its output and exit code.',
+    {
+      command: { type: 'string', description: 'The command line to execute.' },
+      cwd: {
+        type: 'string',
+        description:
+          'Working directory for the command (optional, defaults to the working directory).',
+      },
+      timeout_ms: {
+        type: 'integer',
+        description: 'Timeout in milliseconds (optional, default 60000, max 600000).',
+      },
     },
     ['command'],
   ),
 ];
 
-export const READ_ONLY_TOOL_NAMES = new Set(['list_directory', 'read_file', 'glob', 'grep']);
+export const READ_ONLY_TOOL_NAMES = new Set([
+  'list_directory',
+  'list_dir',
+  'read_file',
+  'glob',
+  'grep',
+]);
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -323,7 +409,9 @@ async function* walkFiles(
           subdirs.push(full);
         }
       } else if (entry.isFile()) {
-        yield full;
+        if (!isIgnoredFile(entry.name)) {
+          yield full;
+        }
       }
     }
     // Push in reverse so traversal stays alphabetical
@@ -333,7 +421,11 @@ async function* walkFiles(
   }
 }
 
-function getArgString(args: Record<string, unknown>, key: string, required = true): string | undefined {
+function getArgString(
+  args: Record<string, unknown>,
+  key: string,
+  required = true,
+): string | undefined {
   const value = args[key];
   if (value === undefined || value === null || value === '') {
     if (required) {
@@ -387,7 +479,9 @@ async function listDirectory(absPath: string, cwd: string): Promise<ToolOutcome>
 
   const entries = await fs.readdir(absPath, { withFileTypes: true });
   const dirs = entries.filter((e) => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
-  const files = entries.filter((e) => !e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
+  const files = entries
+    .filter((e) => !e.isDirectory())
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const lines: string[] = [];
   const limit = 500;
@@ -419,6 +513,11 @@ async function readFileTool(
   offset?: number,
   limit?: number,
 ): Promise<ToolOutcome> {
+  if (isIgnoredFile(absPath)) {
+    throw new ToolError(
+      `Access to sensitive file "${path.basename(absPath)}" is blocked by security policy to prevent credential leaks.`,
+    );
+  }
   let stats;
   try {
     stats = await fs.stat(absPath);
@@ -451,7 +550,8 @@ async function readFileTool(
   const slice = allLines.slice(start - 1, start - 1 + count);
   const width = String(start + slice.length).length;
   const numbered = slice.map((line, i) => {
-    const text = line.length > MAX_LINE_CHARS ? `${line.slice(0, MAX_LINE_CHARS)}… [line truncated]` : line;
+    const text =
+      line.length > MAX_LINE_CHARS ? `${line.slice(0, MAX_LINE_CHARS)}… [line truncated]` : line;
     return `${String(start + i).padStart(width, ' ')}\t${text}`;
   });
 
@@ -488,7 +588,9 @@ async function globTool(
 
   const normalizedPattern = pattern.replace(/\\/g, '/').replace(/^\.\//, '');
   // Patterns without a slash match file names anywhere (like `**/pattern`)
-  const matcher = globToRegExp(normalizedPattern.includes('/') ? normalizedPattern : `**/${normalizedPattern}`);
+  const matcher = globToRegExp(
+    normalizedPattern.includes('/') ? normalizedPattern : `**/${normalizedPattern}`,
+  );
   const deadline = Date.now() + SEARCH_TIME_BUDGET_MS;
   const results: string[] = [];
   let truncated = false;
@@ -506,7 +608,8 @@ async function globTool(
   const timedOut = Date.now() > deadline;
 
   const shown = results.map((f) => displayPath(f, cwd));
-  let output = shown.length > 0 ? shown.join('\n') : `No files matched "${pattern}" in ${searchRoot}.`;
+  let output =
+    shown.length > 0 ? shown.join('\n') : `No files matched "${pattern}" in ${searchRoot}.`;
   if (truncated) output += `\n[Results limited to ${MAX_GLOB_RESULTS}. Narrow the pattern.]`;
   if (timedOut) output += '\n[Search stopped early: time budget exceeded. Narrow the search path.]';
 
@@ -528,7 +631,9 @@ async function grepTool(
   try {
     regex = new RegExp(pattern, caseInsensitive ? 'i' : '');
   } catch (err) {
-    throw new ToolError(`Invalid regular expression: ${err instanceof Error ? err.message : String(err)}`);
+    throw new ToolError(
+      `Invalid regular expression: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   let stats;
@@ -588,7 +693,8 @@ async function grepTool(
   }
   const timedOut = Date.now() > deadline;
 
-  let output = matches.length > 0 ? matches.join('\n') : `No matches for /${pattern}/ in ${searchPath}.`;
+  let output =
+    matches.length > 0 ? matches.join('\n') : `No matches for /${pattern}/ in ${searchPath}.`;
   if (truncated) output += `\n[Results limited to ${MAX_GREP_MATCHES} matches. Narrow the search.]`;
   if (timedOut) output += '\n[Search stopped early: time budget exceeded. Narrow the search path.]';
 
@@ -613,7 +719,11 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
-async function commitWrite(absPath: string, content: string, isNewFile: boolean): Promise<ToolOutcome> {
+async function commitWrite(
+  absPath: string,
+  content: string,
+  isNewFile: boolean,
+): Promise<ToolOutcome> {
   await fs.mkdir(path.dirname(absPath), { recursive: true });
   await fs.writeFile(absPath, content, 'utf-8');
   const bytes = Buffer.byteLength(content, 'utf-8');
@@ -632,7 +742,9 @@ async function planEdit(args: Record<string, unknown>, ctx: ToolContext): Promis
     throw new ToolError('edit_file requires string arguments "old_string" and "new_string".');
   }
   if (oldRaw.length === 0) {
-    throw new ToolError('old_string is empty. Use write_file to create a new file or overwrite one.');
+    throw new ToolError(
+      'old_string is empty. Use write_file to create a new file or overwrite one.',
+    );
   }
   if (oldRaw === newRaw) {
     throw new ToolError('old_string and new_string are identical; nothing to change.');
@@ -672,7 +784,9 @@ async function planEdit(args: Record<string, unknown>, ctx: ToolContext): Promis
     );
   }
 
-  const next = replaceAll ? previous.split(oldStr).join(newStr) : previous.replace(oldStr, () => newStr);
+  const next = replaceAll
+    ? previous.split(oldStr).join(newStr)
+    : previous.replace(oldStr, () => newStr);
   const shown = displayPath(absPath, ctx.cwd);
 
   return {
@@ -817,7 +931,10 @@ export async function runShellCommand(
   });
 }
 
-async function planCommand(args: Record<string, unknown>, ctx: ToolContext): Promise<CommandToolPlan> {
+async function planCommand(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<CommandToolPlan> {
   const command = getArgString(args, 'command')!.trim();
   const cwdArg = getArgString(args, 'cwd', false);
   const cwd = cwdArg ? resolveAnyPath(cwdArg, ctx.cwd) : ctx.cwd;
@@ -831,7 +948,10 @@ async function planCommand(args: Record<string, unknown>, ctx: ToolContext): Pro
     throw new ToolError(`cwd not found: ${cwd}`);
   }
   const requested = getArgInt(args, 'timeout_ms');
-  const timeoutMs = Math.min(Math.max(requested ?? DEFAULT_COMMAND_TIMEOUT_MS, 1000), MAX_COMMAND_TIMEOUT_MS);
+  const timeoutMs = Math.min(
+    Math.max(requested ?? DEFAULT_COMMAND_TIMEOUT_MS, 1000),
+    MAX_COMMAND_TIMEOUT_MS,
+  );
 
   return {
     kind: 'command',
@@ -854,9 +974,14 @@ export async function planToolCall(
 ): Promise<ToolPlan> {
   switch (name) {
     case 'list_directory':
+    case 'list_dir':
     case 'ls': {
       const target = resolveAnyPath(pathArg(args, false) ?? '.', ctx.cwd);
-      return { kind: 'read', title: displayPath(target, ctx.cwd), run: () => listDirectory(target, ctx.cwd) };
+      return {
+        kind: 'read',
+        title: displayPath(target, ctx.cwd),
+        run: () => listDirectory(target, ctx.cwd),
+      };
     }
     case 'read_file': {
       const target = resolveAnyPath(pathArg(args)!, ctx.cwd);

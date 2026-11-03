@@ -226,9 +226,7 @@ export function categorizeModels(
     options.fallbackHeavy ??
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
   const fallbackWeak =
-    options.fallbackWeak ??
-    options.fallbackLight ??
-    'meta/llama-3.2-11b-vision-instruct';
+    options.fallbackWeak ?? options.fallbackLight ?? 'meta/llama-3.2-11b-vision-instruct';
 
   // Check if live multi-provider NIM catalog models are present in `usable`
   const verifiedStrongPresent = VERIFIED_STRONG_POOL_MODELS.filter((m) => usableSet.has(m));

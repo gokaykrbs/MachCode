@@ -3,12 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {
-  planToolCall,
-  resolveAnyPath,
-  globToRegExp,
-  isInsideDir,
-} from './agentTools.js';
+import { planToolCall, resolveAnyPath, globToRegExp, isInsideDir } from './agentTools.js';
 
 describe('Agent Tools Suite', () => {
   it('resolveAnyPath handles relative, absolute, home and bare drive letters', () => {
@@ -56,8 +51,16 @@ describe('Agent Tools Suite', () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-tools-test-'));
     try {
       await fs.mkdir(path.join(tmp, 'src', 'utils'), { recursive: true });
-      await fs.writeFile(path.join(tmp, 'src', 'index.ts'), 'export const hello = "world";\n', 'utf-8');
-      await fs.writeFile(path.join(tmp, 'src', 'utils', 'math.ts'), 'export function add(a: number, b: number) { return a + b; }\n', 'utf-8');
+      await fs.writeFile(
+        path.join(tmp, 'src', 'index.ts'),
+        'export const hello = "world";\n',
+        'utf-8',
+      );
+      await fs.writeFile(
+        path.join(tmp, 'src', 'utils', 'math.ts'),
+        'export function add(a: number, b: number) { return a + b; }\n',
+        'utf-8',
+      );
 
       // 1. list_directory
       const listPlan = await planToolCall('list_directory', { path: 'src' }, { cwd: tmp });
@@ -69,7 +72,11 @@ describe('Agent Tools Suite', () => {
       }
 
       // 2. read_file with offset and limit
-      const readPlan = await planToolCall('read_file', { path: 'src/index.ts', offset: 1, limit: 10 }, { cwd: tmp });
+      const readPlan = await planToolCall(
+        'read_file',
+        { path: 'src/index.ts', offset: 1, limit: 10 },
+        { cwd: tmp },
+      );
       assert.equal(readPlan.kind, 'read');
       if (readPlan.kind === 'read') {
         const readOut = await readPlan.run();
@@ -156,11 +163,7 @@ describe('Agent Tools Suite', () => {
       const isWin = process.platform === 'win32';
       const cmd = isWin ? 'Write-Output "agent-cmd-success"' : 'echo "agent-cmd-success"';
 
-      const cmdPlan = await planToolCall(
-        'run_command',
-        { command: cmd },
-        { cwd: tmp },
-      );
+      const cmdPlan = await planToolCall('run_command', { command: cmd }, { cwd: tmp });
 
       assert.equal(cmdPlan.kind, 'command');
       if (cmdPlan.kind === 'command') {

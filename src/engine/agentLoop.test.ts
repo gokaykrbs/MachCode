@@ -55,8 +55,7 @@ describe('Autonomous Agent Loop (runAgentLoop)', () => {
           // Verify previous tool message was received by model
           const toolMsg = body.messages.find(
             (m) =>
-              m.role === 'tool' &&
-              (m as { tool_call_id?: string }).tool_call_id === 'call_list_1',
+              m.role === 'tool' && (m as { tool_call_id?: string }).tool_call_id === 'call_list_1',
           );
           assert.ok(toolMsg, 'Expected tool result message in conversation history');
 
@@ -209,7 +208,9 @@ describe('Autonomous Agent Loop (runAgentLoop)', () => {
         } else {
           // Model sees rejection in tool message
           const toolMsg = body.messages.find((m) => m.role === 'tool');
-          assert.ok(toolMsg?.content?.includes('declined') || toolMsg?.content?.includes('rejected'));
+          assert.ok(
+            toolMsg?.content?.includes('declined') || toolMsg?.content?.includes('rejected'),
+          );
           sse = `data: ${JSON.stringify({
             choices: [{ delta: { content: 'Understood, I will keep version 1.' } }],
           })}\n\ndata: [DONE]\n\n`;

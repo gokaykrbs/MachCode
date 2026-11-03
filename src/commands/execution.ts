@@ -4,12 +4,22 @@ import type { SlashCommand, CommandContext } from './types.js';
 
 export const planCommand: SlashCommand = {
   name: 'plan',
-  description: 'Generate an implementation plan only without modifying files',
+  description: 'Generate an architectural plan, or switch session to Plan Mode (read-only)',
   category: 'Execution & Modes',
-  usage: '/plan <prompt>',
+  usage: '/plan [prompt]',
   execute: async (args: string, context: CommandContext) => {
     if (!args || args.trim().length === 0) {
-      console.log(chalk.yellow('Usage: /plan <what you want to build or refactor>'));
+      if (context.setMode) {
+        context.setMode('plan');
+      } else {
+        context.mode = 'plan';
+      }
+      console.log(
+        `\n${chalk.magenta.bold('🔍 PLAN MODU Etkinleştirildi (Salt Okunur)')}\n` +
+          chalk.gray(
+            '  Dosya düzenleme ve komut yürütme çift katmanlı güvenlikle kilitlendi. Çıkmak için /build yazın veya Tab tuşuna basın.\n',
+          ),
+      );
       return;
     }
 
@@ -25,8 +35,98 @@ export const planCommand: SlashCommand = {
       apiKey: context.apiKey,
       fetchImpl: context.fetchImpl,
       history: context.sessionHistory,
+      readOnly: true,
       writeToStdout: true,
     });
+  },
+};
+
+export const modeCommand: SlashCommand = {
+  name: 'mode',
+  description: 'Switch between Plan (read-only) and Build (full agent) modes',
+  category: 'Execution & Modes',
+  usage: '/mode [plan|build|toggle]',
+  aliases: ['m'],
+  execute: async (args: string, context: CommandContext) => {
+    const raw = args.trim().toLowerCase();
+    const current = context.mode ?? 'build';
+
+    let target: 'build' | 'plan';
+    if (!raw || raw === 'status' || raw === 'info') {
+      console.log(
+        `\n${chalk.cyan.bold('ℹ Aktif Mod:')} ${
+          current === 'plan'
+            ? chalk.magenta.bold('PLAN MODU (Salt Okunur - dosya düzenleme ve komutlar kilitli)')
+            : chalk.green.bold(
+                'BUILD MODU (Tam Yetkili - dosya düzenleme ve komut çalıştırma etkin)',
+              )
+        }`,
+      );
+      console.log(
+        chalk.gray(
+          '  İpucu: /mode plan veya /mode build yazın ya da boş istemdeyken Tab tuşuna basarak mod değiştirin.\n',
+        ),
+      );
+      return;
+    }
+
+    if (raw === 'toggle' || raw === 't') {
+      target = current === 'plan' ? 'build' : 'plan';
+    } else if (raw === 'plan' || raw === 'p' || raw === 'readonly' || raw === 'ro') {
+      target = 'plan';
+    } else if (raw === 'build' || raw === 'b' || raw === 'dev' || raw === 'agent') {
+      target = 'build';
+    } else {
+      console.log(
+        chalk.yellow(
+          `Bilinmeyen mod "${args.trim()}". Geçerli seçenekler: /mode plan, /mode build, /mode toggle`,
+        ),
+      );
+      return;
+    }
+
+    if (context.setMode) {
+      context.setMode(target);
+    } else {
+      context.mode = target;
+    }
+
+    if (target === 'plan') {
+      console.log(
+        `\n${chalk.magenta.bold('🔍 Mod Değiştirildi: PLAN MODU (Salt Okunur)')}\n` +
+          chalk.gray(
+            '  Model yalnızca okuma araçlarını (read_file, list_directory, glob, grep) kullanabilir.\n  Dosya düzenleme ve komut yürütme çift katmanlı güvenlikle kilitlendi.\n',
+          ),
+      );
+    } else {
+      console.log(
+        `\n${chalk.green.bold('🛠️  Mod Değiştirildi: BUILD MODU (Tam Yetkili Ajan)')}\n` +
+          chalk.gray(
+            '  Model dosya okuma, surgical edit_file, write_file ve run_command/bash çalıştırabilir.\n  Değişiklikler diff önizlemesi ve onay istemiyle korunur.\n',
+          ),
+      );
+    }
+  },
+};
+
+export const buildCommand: SlashCommand = {
+  name: 'build',
+  description: 'Switch session to Build Mode (enables file edits and bash execution)',
+  category: 'Execution & Modes',
+  usage: '/build',
+  aliases: ['dev', 'write'],
+  execute: async (_args: string, context: CommandContext) => {
+    if (context.setMode) {
+      context.setMode('build');
+    } else {
+      context.mode = 'build';
+    }
+    console.log(
+      `\n${chalk.green.bold('🛠️  BUILD MODU Etkinleştirildi')}\n` +
+        chalk.gray(
+          '  Dosya düzenleme ve komut çalıştırma araçları aktif. Değişiklikler diff önizlemesiyle denetlenir.\n',
+        ),
+    );
   },
 };
 
@@ -189,6 +289,8 @@ export const agentCommand: SlashCommand = {
 export const executionCommands: SlashCommand[] = [
   askCommand,
   planCommand,
+  modeCommand,
+  buildCommand,
   heavyCommand,
   fastCommand,
   reviewCommand,

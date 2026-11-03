@@ -5,10 +5,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import chalk from 'chalk';
 import ora from 'ora';
 import { autoAssignAndSaveModels, ensureConfig } from './config/index.js';
-import {
-  VERIFIED_STRONG_POOL_MODELS,
-  VERIFIED_WEAK_POOL_MODELS,
-} from './engine/autoRouter.js';
+import { VERIFIED_STRONG_POOL_MODELS, VERIFIED_WEAK_POOL_MODELS } from './engine/autoRouter.js';
 import {
   executeParsedCode,
   type ConfirmWriteDecision,
@@ -39,10 +36,7 @@ import {
   type FileSnapshot,
   type TokenStats,
 } from './commands/index.js';
-import {
-  buildAutocompleteItems,
-  promptWithSuggestions,
-} from './ui/autocomplete.js';
+import { buildAutocompleteItems, promptWithSuggestions } from './ui/autocomplete.js';
 
 export interface SessionMessage {
   role: 'user' | 'assistant';
@@ -386,7 +380,20 @@ export async function gatherWorkspaceContext(
         const candidateKeywords = promptWords.filter(
           (w) =>
             w.length >= 4 &&
-            !['deki', 'daki', 'ulas', 'ulaş', 'bana', 'bunu', 'olan', 'goster', 'göster', 'klasor', 'klasör', 'drive'].includes(w),
+            ![
+              'deki',
+              'daki',
+              'ulas',
+              'ulaş',
+              'bana',
+              'bunu',
+              'olan',
+              'goster',
+              'göster',
+              'klasor',
+              'klasör',
+              'drive',
+            ].includes(w),
         );
         for (const kw of candidateKeywords) {
           const directMatch = driveEntries.filter((e) => e.name.toLowerCase().includes(kw));
@@ -702,9 +709,7 @@ export async function runMachCode(
   const deprecatedModels = new Set<string>();
 
   if (options.agentMode === true) {
-    const uniqueProviders = Array.from(
-      new Set(activeStrongPool.map((m) => m.split('/')[0] || m)),
-    );
+    const uniqueProviders = Array.from(new Set(activeStrongPool.map((m) => m.split('/')[0] || m)));
     const providerList =
       uniqueProviders.length > 5
         ? `${uniqueProviders.slice(0, 5).join(', ')} +${uniqueProviders.length - 5} more`
@@ -745,9 +750,7 @@ export async function runMachCode(
     }
 
     if (writeToStdout) {
-      console.log(
-        chalk.magenta.bold(`⚡ Agent locked onto winning model (${raceWinner})\n`),
-      );
+      console.log(chalk.magenta.bold(`⚡ Agent locked onto winning model (${raceWinner})\n`));
     }
 
     const permissionMgr =
@@ -771,9 +774,7 @@ export async function runMachCode(
       timeoutMs: options.timeoutMs,
       writeToStdout,
       fetchImpl: options.fetchImpl,
-      onBeforeWrite: options.onBeforeWrite
-        ? (p, dir) => options.onBeforeWrite!(p, dir)
-        : undefined,
+      onBeforeWrite: options.onBeforeWrite ? (p, dir) => options.onBeforeWrite!(p, dir) : undefined,
       signal: options.signal,
     });
 
@@ -832,9 +833,7 @@ export async function runMachCode(
 
     options.rl?.pause?.();
 
-    const uniqueProviders = Array.from(
-      new Set(activeStrongPool.map((m) => m.split('/')[0] || m)),
-    );
+    const uniqueProviders = Array.from(new Set(activeStrongPool.map((m) => m.split('/')[0] || m)));
     const providerList =
       uniqueProviders.length > 5
         ? `${uniqueProviders.slice(0, 5).join(', ')} +${uniqueProviders.length - 5} more`
@@ -898,15 +897,11 @@ export async function runMachCode(
                 : chalk.gray(latencyText);
             if (tier === 'strong') {
               console.log(
-                chalk.magenta.bold(`⚡ Streaming from winning model (${model})`) +
-                  raceInfo +
-                  '\n',
+                chalk.magenta.bold(`⚡ Streaming from winning model (${model})`) + raceInfo + '\n',
               );
             } else {
               console.log(
-                chalk.blue.bold(`⚡ Streaming from fallback model (${model})`) +
-                  raceInfo +
-                  '\n',
+                chalk.blue.bold(`⚡ Streaming from fallback model (${model})`) + raceInfo + '\n',
               );
             }
           }
@@ -1014,30 +1009,28 @@ export async function runMachCode(
     const promptLower = initialPrompt.toLowerCase();
     const promptHasFileIntent = Boolean(
       inferredTargetFile &&
-        (promptLower.includes('oluştur') ||
-          promptLower.includes('olustur') ||
-          promptLower.includes('create') ||
-          promptLower.includes('yaz') ||
-          promptLower.includes('write') ||
-          promptLower.includes('güncelle') ||
-          promptLower.includes('guncelle') ||
-          promptLower.includes('update') ||
-          promptLower.includes('modify') ||
-          promptLower.includes('edit') ||
-          promptLower.includes('add') ||
-          promptLower.includes('ekle') ||
-          promptLower.includes('değiştir') ||
-          promptLower.includes('degistir') ||
-          promptLower.includes('fix') ||
-          promptLower.includes('düzelt') ||
-          promptLower.includes('duzelt')),
+      (promptLower.includes('oluştur') ||
+        promptLower.includes('olustur') ||
+        promptLower.includes('create') ||
+        promptLower.includes('yaz') ||
+        promptLower.includes('write') ||
+        promptLower.includes('güncelle') ||
+        promptLower.includes('guncelle') ||
+        promptLower.includes('update') ||
+        promptLower.includes('modify') ||
+        promptLower.includes('edit') ||
+        promptLower.includes('add') ||
+        promptLower.includes('ekle') ||
+        promptLower.includes('değiştir') ||
+        promptLower.includes('degistir') ||
+        promptLower.includes('fix') ||
+        promptLower.includes('düzelt') ||
+        promptLower.includes('duzelt')),
     );
 
     const fallbackTarget =
       options.targetFilePath ??
-      (isPureCodeOutput || (hasCodeBlocks && promptHasFileIntent)
-        ? inferredTargetFile
-        : undefined);
+      (isPureCodeOutput || (hasCodeBlocks && promptHasFileIntent) ? inferredTargetFile : undefined);
 
     const effectiveConfirm =
       options.confirmBeforeWrite ??
@@ -1082,6 +1075,10 @@ export interface ReplOptions extends MachCodeRunOptions {
    */
   initialPrompt?: string;
   /**
+   * Initial active mode: 'build' (full agent with file edits and commands) or 'plan' (read-only).
+   */
+  initialMode?: 'build' | 'plan';
+  /**
    * Optional injected readline interface (useful for automated testing).
    */
   rlInterface?: readline.Interface;
@@ -1094,6 +1091,7 @@ export interface ReplBannerOptions {
   heavyModel?: string;
   strongPool?: string[];
   autoApprove?: boolean;
+  mode?: 'build' | 'plan';
 }
 
 /**
@@ -1108,22 +1106,24 @@ export function printReplBanner(options: ReplBannerOptions = {}): void {
   const approvalBadge = options.autoApprove
     ? chalk.yellow('Auto-Approve')
     : chalk.green('Ask before write');
+  const modeBadge =
+    options.mode === 'plan'
+      ? chalk.magenta.bold('Plan (Read-Only)')
+      : chalk.green.bold('Build (Full Agent)');
 
   const cols = process.stdout.columns || 80;
   const maxDirLen = Math.max(16, cols - 28);
   const displayDir =
-    currentDir.length > maxDirLen
-      ? `...${currentDir.slice(-(maxDirLen - 3))}`
-      : currentDir;
+    currentDir.length > maxDirLen ? `...${currentDir.slice(-(maxDirLen - 3))}` : currentDir;
 
   const border = chalk.cyan;
   const rows = [
     `${border('  ╭───────────╮')}  ${chalk.cyan.bold('⚡ MachCode')} ${chalk.gray('v0.1.0')}`,
     `${border('  │  ')}${chalk.cyanBright.bold('██▄ ▄██')}${border('  │')}  ${chalk.dim('Engine:')}   ${chalk.white('Multi-Model AI Coding & Q&A CLI')}`,
     `${border('  │  ')}${chalk.magentaBright.bold('███████')}${border('  │')}  ${chalk.dim('Models:')}   ${chalk.magenta.bold(`${poolModels.length} AI models racing`)} ${chalk.gray(`(${uniqueProviders.length} providers)`)}`,
-    `${border('  │  ')}${chalk.magenta.bold('██ ▀ ██')}${border('  │')}  ${chalk.dim('Session:')}  ${chalk.white(sessionId)} ${chalk.gray('•')} ${approvalBadge}`,
+    `${border('  │  ')}${chalk.magenta.bold('██ ▀ ██')}${border('  │')}  ${chalk.dim('Session:')}  ${chalk.white(sessionId)} ${chalk.gray('•')} ${modeBadge} ${chalk.gray('•')} ${approvalBadge}`,
     `${border('  │  ')}${chalk.blueBright.bold('██   ██')}${border('  │')}  ${chalk.dim('Path:')}     ${chalk.white(displayDir)}`,
-    `${border('  ╰───────────╯')}  ${chalk.dim('Commands:')} ${chalk.yellow('/ask')} ${chalk.dim('•')} ${chalk.yellow('/approve')} ${chalk.dim('•')} ${chalk.yellow('/race')} ${chalk.dim('•')} ${chalk.yellow('/plan')} ${chalk.dim('•')} ${chalk.yellow('/help')} ${chalk.dim('•')} ${chalk.yellow('/exit')}`,
+    `${border('  ╰───────────╯')}  ${chalk.dim('Commands:')} ${chalk.yellow('/mode')} ${chalk.dim('•')} ${chalk.yellow('/approve')} ${chalk.dim('•')} ${chalk.yellow('/race')} ${chalk.dim('•')} ${chalk.yellow('/plan')} ${chalk.dim('•')} ${chalk.yellow('/help')} ${chalk.dim('•')} ${chalk.yellow('/exit')}`,
   ];
 
   console.log('\n' + rows.join('\n') + '\n');
@@ -1170,6 +1170,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const sessionId = `mc_${Math.random().toString(36).substring(2, 10)}`;
   // Interactive terminal sessions default to Ask-Before-Write (autoApprove: false) unless overridden
   const initialAutoApprove = options.autoApprove ?? !(options.writeToStdout ?? true);
+  let activeMode: 'build' | 'plan' = options.initialMode ?? 'build';
 
   // Display startup dashboard
   if (options.writeToStdout ?? true) {
@@ -1178,6 +1179,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       sessionId,
       strongPool,
       autoApprove: initialAutoApprove,
+      mode: activeMode,
     });
   }
 
@@ -1227,6 +1229,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         history: sessionHistory,
         addedFiles: addedContextFiles,
         autoApprove: runOpts?.autoApprove ?? commandContext.autoApprove,
+        readOnly: runOpts?.readOnly ?? activeMode === 'plan',
         permissionManager,
         agentMode: runOpts?.agentMode ?? options.agentMode ?? true,
         confirmBeforeWrite:
@@ -1325,6 +1328,15 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     rl,
     shouldExit: false,
     sessionId,
+    get mode() {
+      return activeMode;
+    },
+    set mode(val: 'build' | 'plan' | undefined) {
+      activeMode = val ?? 'build';
+    },
+    setMode(val: 'build' | 'plan') {
+      activeMode = val;
+    },
     get autoApprove() {
       return activeAutoApprove;
     },
@@ -1452,8 +1464,11 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     }
   }
 
-  // Interactive REPL prompt loop: exact format `[machcode✨] > `
-  const promptLabel = `${chalk.cyan.bold('[machcode✨]')} ${chalk.yellow('>')} `;
+  // Interactive REPL prompt loop: exact format `[machcode✨] > ` (or `[machcode✨ (plan)] > ` in plan mode)
+  const getPromptLabel = () =>
+    activeMode === 'plan'
+      ? `${chalk.cyan.bold('[machcode✨')} ${chalk.magenta('(plan)')}${chalk.cyan.bold(']')} ${chalk.yellow('>')} `
+      : `${chalk.cyan.bold('[machcode✨]')} ${chalk.yellow('>')} `;
   const autocompleteItems = buildAutocompleteItems(commandRegistry);
   const promptHistory: string[] = [];
 
@@ -1462,13 +1477,16 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     try {
       if (process.stdin.isTTY && !options.rlInterface) {
         userInput = await promptWithSuggestions({
-          promptText: promptLabel,
+          promptText: getPromptLabel,
           items: autocompleteItems,
           history: promptHistory,
           rlFallback: rl,
+          onTabToggleMode: () => {
+            activeMode = activeMode === 'plan' ? 'build' : 'plan';
+          },
         });
       } else {
-        userInput = await rl.question(promptLabel);
+        userInput = await rl.question(getPromptLabel());
       }
     } catch {
       break;

@@ -312,9 +312,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     toolsUnavailable: false,
   });
 
-  const messages: AgentChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-  ];
+  const messages: AgentChatMessage[] = [{ role: 'system', content: systemPrompt }];
 
   // Prior conversation history
   if (options.history && options.history.length > 0) {
@@ -377,9 +375,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
 
     // If model returned an HTTP error (404, 410, 500, etc.), auto-heal to next candidate model
     if (stepResult.error || stepResult.status >= 400) {
-      const remainingCandidates = (options.candidateModels ?? []).filter(
-        (m) => m !== activeModel,
-      );
+      const remainingCandidates = (options.candidateModels ?? []).filter((m) => m !== activeModel);
       if (remainingCandidates.length > 0) {
         const nextModel = remainingCandidates[0];
         if (writeToStdout) {
@@ -512,6 +508,24 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
           tool_call_id: toolCall.id,
           name: toolCall.name,
           content: `Error: ${msg}`,
+        });
+        continue;
+      }
+
+      // PDF Phase 2 double-layer guard: in Plan mode (readOnly), mutating tools are rejected by the executor
+      if (options.readOnly && plan.kind !== 'read') {
+        const blockedMsg =
+          'Hata: Plan modundasınız (Salt Okunur). Dosya düzenleme veya komut çalıştırma bu modda engellenmiştir. Değişiklik yapmak için build moduna geçin.';
+        if (writeToStdout) {
+          console.log(
+            `  ${chalk.red('✖')} ${chalk.yellow(toolCall.name)} ${chalk.red('Plan modunda engellendi (Salt Okunur)')}`,
+          );
+        }
+        messages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          name: toolCall.name,
+          content: blockedMsg,
         });
         continue;
       }

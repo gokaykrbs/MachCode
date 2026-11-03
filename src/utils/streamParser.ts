@@ -117,8 +117,7 @@ function getTrailingOpenTagHoldLength(buffer: string, isStreamStart: boolean): n
     const len = getTrailingTagPrefixLength(buffer, tag);
     if (len > 0) {
       const startIdx = buffer.length - len;
-      const isStart =
-        startIdx === 0 ? isStreamStart : /[\r\n]\s*$/.test(buffer.slice(0, startIdx));
+      const isStart = startIdx === 0 ? isStreamStart : /[\r\n]\s*$/.test(buffer.slice(0, startIdx));
       if (isStart && len > maxHold) {
         maxHold = len;
       }

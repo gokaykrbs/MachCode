@@ -19,26 +19,106 @@ export function buildAutocompleteItems(_registry?: CommandRegistry): Autocomplet
 
   // 1. Core slash commands from registry or standard list
   const coreCommands: Array<{ prefix: string; displayCommand: string; description: string }> = [
-    { prefix: '/ask', displayCommand: '/ask <question>', description: 'Ask a question or chat without modifying workspace files' },
-    { prefix: '/approve', displayCommand: '/approve [ask|auto]', description: 'Toggle interactive diff approval before modifying files' },
-    { prefix: '/skills', displayCommand: '/skills [name] [task]', description: 'List or run tasks with loaded official NVIDIA Agent Skills' },
-    { prefix: '/race', displayCommand: '/race', description: 'Run live parallel speed benchmark across all AI models' },
-    { prefix: '/plan', displayCommand: '/plan <prompt>', description: 'Generate architectural plan only without modifying files' },
-    { prefix: '/heavy', displayCommand: '/heavy <prompt>', description: 'Execute exclusively using the Heavyweight model' },
-    { prefix: '/fast', displayCommand: '/fast <prompt>', description: 'Execute exclusively using the Lightweight model' },
-    { prefix: '/review', displayCommand: '/review <file>', description: 'Run deep security, bug and edge-case code review' },
-    { prefix: '/undo', displayCommand: '/undo', description: 'Revert the last file modification made by the AI' },
-    { prefix: '/diff', displayCommand: '/diff', description: 'Show terminal diff of uncommitted git changes' },
-    { prefix: '/commit', displayCommand: '/commit', description: 'Generate conventional commit message and commit' },
-    { prefix: '/config', displayCommand: '/config [refresh|key]', description: 'View or refresh autonomous multi-model racing pools & key' },
-    { prefix: '/tokens', displayCommand: '/tokens', description: 'Show session token usage statistics' },
-    { prefix: '/add', displayCommand: '/add <path>', description: 'Add file or directory to active session context' },
-    { prefix: '/drop', displayCommand: '/drop <path>', description: 'Remove file or directory from session context' },
-    { prefix: '/cd', displayCommand: '/cd <path>', description: 'Change active workspace directory (e.g. /cd D:\\ or /cd ..)' },
-    { prefix: '/ls', displayCommand: '/ls [path]', description: 'List files and directories in current workspace or path' },
-    { prefix: '/context', displayCommand: '/context', description: 'List currently loaded files and token usage estimate' },
-    { prefix: '/reset', displayCommand: '/reset', description: 'Clear entire session history and context files' },
-    { prefix: '/run', displayCommand: '/run <cmd>', description: 'Execute shell command directly in workspace' },
+    {
+      prefix: '/ask',
+      displayCommand: '/ask <question>',
+      description: 'Ask a question or chat without modifying workspace files',
+    },
+    {
+      prefix: '/approve',
+      displayCommand: '/approve [ask|auto]',
+      description: 'Toggle interactive diff approval before modifying files',
+    },
+    {
+      prefix: '/skills',
+      displayCommand: '/skills [name] [task]',
+      description: 'List or run tasks with loaded official NVIDIA Agent Skills',
+    },
+    {
+      prefix: '/race',
+      displayCommand: '/race',
+      description: 'Run live parallel speed benchmark across all AI models',
+    },
+    {
+      prefix: '/plan',
+      displayCommand: '/plan <prompt>',
+      description: 'Generate architectural plan only without modifying files',
+    },
+    {
+      prefix: '/heavy',
+      displayCommand: '/heavy <prompt>',
+      description: 'Execute exclusively using the Heavyweight model',
+    },
+    {
+      prefix: '/fast',
+      displayCommand: '/fast <prompt>',
+      description: 'Execute exclusively using the Lightweight model',
+    },
+    {
+      prefix: '/review',
+      displayCommand: '/review <file>',
+      description: 'Run deep security, bug and edge-case code review',
+    },
+    {
+      prefix: '/undo',
+      displayCommand: '/undo',
+      description: 'Revert the last file modification made by the AI',
+    },
+    {
+      prefix: '/diff',
+      displayCommand: '/diff',
+      description: 'Show terminal diff of uncommitted git changes',
+    },
+    {
+      prefix: '/commit',
+      displayCommand: '/commit',
+      description: 'Generate conventional commit message and commit',
+    },
+    {
+      prefix: '/config',
+      displayCommand: '/config [refresh|key]',
+      description: 'View or refresh autonomous multi-model racing pools & key',
+    },
+    {
+      prefix: '/tokens',
+      displayCommand: '/tokens',
+      description: 'Show session token usage statistics',
+    },
+    {
+      prefix: '/add',
+      displayCommand: '/add <path>',
+      description: 'Add file or directory to active session context',
+    },
+    {
+      prefix: '/drop',
+      displayCommand: '/drop <path>',
+      description: 'Remove file or directory from session context',
+    },
+    {
+      prefix: '/cd',
+      displayCommand: '/cd <path>',
+      description: 'Change active workspace directory (e.g. /cd D:\\ or /cd ..)',
+    },
+    {
+      prefix: '/ls',
+      displayCommand: '/ls [path]',
+      description: 'List files and directories in current workspace or path',
+    },
+    {
+      prefix: '/context',
+      displayCommand: '/context',
+      description: 'List currently loaded files and token usage estimate',
+    },
+    {
+      prefix: '/reset',
+      displayCommand: '/reset',
+      description: 'Clear entire session history and context files',
+    },
+    {
+      prefix: '/run',
+      displayCommand: '/run <cmd>',
+      description: 'Execute shell command directly in workspace',
+    },
     { prefix: '/help', displayCommand: '/help', description: 'Print table of all slash commands' },
     { prefix: '/clear', displayCommand: '/clear', description: 'Clear the terminal screen' },
     { prefix: '/exit', displayCommand: '/exit', description: 'Gracefully exit the MachCode CLI' },
@@ -63,18 +143,66 @@ export function buildAutocompleteItems(_registry?: CommandRegistry): Autocomplet
     description: string;
     tags?: string[];
   }> = [
-    { prefix: '/skill cuopt', displayCommand: '/skill cuopt [task]', description: 'cuOpt: GPU-accelerated LP, MILP & Vehicle Routing API' },
-    { prefix: '/skill cudf', displayCommand: '/skill cudf [task]', description: 'cuDF: GPU DataFrames, pandas acceleration & ETL' },
-    { prefix: '/skill cudaq', displayCommand: '/skill cudaq [task]', description: 'CUDA-Q: Quantum-classical hybrid programming guide' },
-    { prefix: '/skill deepstream', displayCommand: '/skill deepstream [task]', description: 'DeepStream: Vision AI & video analytics pipelines' },
-    { prefix: '/skill doca', displayCommand: '/skill doca [task]', description: 'DOCA: BlueField DPU & ConnectX NIC programming' },
-    { prefix: '/skill dali', displayCommand: '/skill dali [task]', description: 'DALI: GPU data loading & preprocessing pipelines' },
-    { prefix: '/skill bionemo', displayCommand: '/skill bionemo [task]', description: 'BioNeMo: Biomolecular research & protein design' },
-    { prefix: '/skill dynamo', displayCommand: '/skill dynamo [task]', description: 'Dynamo: Distributed LLM inference deployment on K8s' },
-    { prefix: '/skill data-designer', displayCommand: '/skill data-designer', description: 'NeMo Data Designer: Declarative synthetic datasets' },
-    { prefix: '/skill earth2', displayCommand: '/skill earth2 [task]', description: 'Earth2Studio: Deep learning weather & climate AI' },
-    { prefix: '/skill ethos', displayCommand: '/skill ethos [task]', description: 'Ethos: Agent purpose, boundaries & governance' },
-    { prefix: '/skill ontology', displayCommand: '/skill ontology [task]', description: 'Auto Ontology: Semantic models & text-to-SQL' },
+    {
+      prefix: '/skill cuopt',
+      displayCommand: '/skill cuopt [task]',
+      description: 'cuOpt: GPU-accelerated LP, MILP & Vehicle Routing API',
+    },
+    {
+      prefix: '/skill cudf',
+      displayCommand: '/skill cudf [task]',
+      description: 'cuDF: GPU DataFrames, pandas acceleration & ETL',
+    },
+    {
+      prefix: '/skill cudaq',
+      displayCommand: '/skill cudaq [task]',
+      description: 'CUDA-Q: Quantum-classical hybrid programming guide',
+    },
+    {
+      prefix: '/skill deepstream',
+      displayCommand: '/skill deepstream [task]',
+      description: 'DeepStream: Vision AI & video analytics pipelines',
+    },
+    {
+      prefix: '/skill doca',
+      displayCommand: '/skill doca [task]',
+      description: 'DOCA: BlueField DPU & ConnectX NIC programming',
+    },
+    {
+      prefix: '/skill dali',
+      displayCommand: '/skill dali [task]',
+      description: 'DALI: GPU data loading & preprocessing pipelines',
+    },
+    {
+      prefix: '/skill bionemo',
+      displayCommand: '/skill bionemo [task]',
+      description: 'BioNeMo: Biomolecular research & protein design',
+    },
+    {
+      prefix: '/skill dynamo',
+      displayCommand: '/skill dynamo [task]',
+      description: 'Dynamo: Distributed LLM inference deployment on K8s',
+    },
+    {
+      prefix: '/skill data-designer',
+      displayCommand: '/skill data-designer',
+      description: 'NeMo Data Designer: Declarative synthetic datasets',
+    },
+    {
+      prefix: '/skill earth2',
+      displayCommand: '/skill earth2 [task]',
+      description: 'Earth2Studio: Deep learning weather & climate AI',
+    },
+    {
+      prefix: '/skill ethos',
+      displayCommand: '/skill ethos [task]',
+      description: 'Ethos: Agent purpose, boundaries & governance',
+    },
+    {
+      prefix: '/skill ontology',
+      displayCommand: '/skill ontology [task]',
+      description: 'Auto Ontology: Semantic models & text-to-SQL',
+    },
   ];
 
   for (const skill of skillShorthands) {
@@ -91,13 +219,29 @@ export function buildAutocompleteItems(_registry?: CommandRegistry): Autocomplet
 
   // 3. Direct skill shortcuts (e.g. /cuopt, /cudf, /cudaq)
   const directShortcuts = [
-    { prefix: '/cuopt', display: '/cuopt [task]', desc: 'cuOpt: GPU vehicle routing & optimization' },
-    { prefix: '/cudf', display: '/cudf [task]', desc: 'cuDF: GPU DataFrames & pandas acceleration' },
+    {
+      prefix: '/cuopt',
+      display: '/cuopt [task]',
+      desc: 'cuOpt: GPU vehicle routing & optimization',
+    },
+    {
+      prefix: '/cudf',
+      display: '/cudf [task]',
+      desc: 'cuDF: GPU DataFrames & pandas acceleration',
+    },
     { prefix: '/cudaq', display: '/cudaq [task]', desc: 'CUDA-Q: Quantum-classical programming' },
-    { prefix: '/deepstream', display: '/deepstream [task]', desc: 'DeepStream: Vision AI & video analytics' },
+    {
+      prefix: '/deepstream',
+      display: '/deepstream [task]',
+      desc: 'DeepStream: Vision AI & video analytics',
+    },
     { prefix: '/doca', display: '/doca [task]', desc: 'DOCA: BlueField DPU networking' },
     { prefix: '/dali', display: '/dali [task]', desc: 'DALI: GPU data preprocessing' },
-    { prefix: '/bionemo', display: '/bionemo [task]', desc: 'BioNeMo: Drug discovery & protein design' },
+    {
+      prefix: '/bionemo',
+      display: '/bionemo [task]',
+      desc: 'BioNeMo: Drug discovery & protein design',
+    },
     { prefix: '/dynamo', display: '/dynamo [task]', desc: 'Dynamo: Distributed LLM inference' },
   ];
 
@@ -149,12 +293,13 @@ export function filterAutocompleteItems(
 }
 
 export interface PromptWithSuggestionsOptions {
-  promptText: string;
+  promptText: string | (() => string);
   items?: AutocompleteItem[];
   history?: string[];
   input?: NodeJS.ReadableStream;
   output?: NodeJS.WritableStream;
   rlFallback?: readlinePromises.Interface;
+  onTabToggleMode?: () => void;
 }
 
 /**
@@ -169,8 +314,13 @@ export async function promptWithSuggestions(
 
   // Fall back to standard readline question if not in an interactive TTY
   if (!isTty && options.rlFallback) {
-    return options.rlFallback.question(options.promptText);
+    const fallbackText =
+      typeof options.promptText === 'function' ? options.promptText() : options.promptText;
+    return options.rlFallback.question(fallbackText);
   }
+
+  let currentPromptText =
+    typeof options.promptText === 'function' ? options.promptText() : options.promptText;
 
   const allItems = options.items ?? buildAutocompleteItems();
   const history = options.history ?? [];
@@ -212,11 +362,10 @@ export async function promptWithSuggestions(
       clearRenderedBox();
 
       // Clear current line and re-render prompt + buffer
-      stdout.write(`\r\x1b[2K${options.promptText}${buffer}`);
+      stdout.write(`\r\x1b[2K${currentPromptText}${buffer}`);
 
-      const filtered = !isDismissed && buffer.startsWith('/')
-        ? filterAutocompleteItems(buffer, allItems)
-        : [];
+      const filtered =
+        !isDismissed && buffer.startsWith('/') ? filterAutocompleteItems(buffer, allItems) : [];
 
       if (filtered.length > 0) {
         if (selectedIndex >= filtered.length) {
@@ -233,15 +382,14 @@ export async function promptWithSuggestions(
         const cardWidth = Math.min(termCols - 4, 76);
 
         const lines: string[] = [];
-        const matchCountText = filtered.length !== allItems.length ? ` (${filtered.length} matches)` : '';
+        const matchCountText =
+          filtered.length !== allItems.length ? ` (${filtered.length} matches)` : '';
         const headerTitle = ` Commands & Loaded Skills${matchCountText} `;
         const borderCyan = chalk.cyan;
 
         // Top border
         const topFillLen = Math.max(0, cardWidth - headerTitle.length - 4);
-        lines.push(
-          borderCyan(`  ╭──${chalk.white.bold(headerTitle)}${'─'.repeat(topFillLen)}╮`),
-        );
+        lines.push(borderCyan(`  ╭──${chalk.white.bold(headerTitle)}${'─'.repeat(topFillLen)}╮`));
 
         for (let i = 0; i < visibleItems.length; i++) {
           const item = visibleItems[i];
@@ -266,15 +414,15 @@ export async function promptWithSuggestions(
           const rowContent = `${pointer}${catBadge} ${cmdColor(cmdPadded)} ${descColor(descTrunc)}`;
 
           lines.push(
-            borderCyan('  │') + rowContent.padEnd(cardWidth - 2, ' ').slice(0, cardWidth - 2) + borderCyan('│'),
+            borderCyan('  │') +
+              rowContent.padEnd(cardWidth - 2, ' ').slice(0, cardWidth - 2) +
+              borderCyan('│'),
           );
         }
 
         // Bottom border
         lines.push(borderCyan(`  ╰${'─'.repeat(cardWidth - 2)}╯`));
-        lines.push(
-          chalk.dim('   ↑/↓ navigate • Tab complete • Enter run • Esc close'),
-        );
+        lines.push(chalk.dim('   ↑/↓ navigate • Tab complete • Enter run • Esc close'));
 
         lastBoxLines = lines.length;
 
@@ -287,7 +435,7 @@ export async function promptWithSuggestions(
 
       // Position terminal cursor at buffer insertion point
       // eslint-disable-next-line no-control-regex
-      const cursorCol = options.promptText.replace(/\x1b\[[0-9;]*m/g, '').length + cursor + 1;
+      const cursorCol = currentPromptText.replace(/\x1b\[[0-9;]*m/g, '').length + cursor + 1;
       stdout.write(`\r\x1b[${cursorCol}G`);
     }
 
@@ -313,9 +461,8 @@ export async function promptWithSuggestions(
 
       // Handle Enter / Return
       if (key.name === 'return' || key.name === 'enter') {
-        const filtered = !isDismissed && buffer.startsWith('/')
-          ? filterAutocompleteItems(buffer, allItems)
-          : [];
+        const filtered =
+          !isDismissed && buffer.startsWith('/') ? filterAutocompleteItems(buffer, allItems) : [];
 
         // If user typed exact "/" and hit Enter with an item selected, autocomplete and submit
         if (buffer === '/' && filtered.length > 0 && filtered[selectedIndex]) {
@@ -328,11 +475,10 @@ export async function promptWithSuggestions(
         return;
       }
 
-      // Handle Tab (autocomplete selected item into buffer)
+      // Handle Tab (autocomplete selected item into buffer, or toggle mode when buffer is empty)
       if (key.name === 'tab') {
-        const filtered = !isDismissed && buffer.startsWith('/')
-          ? filterAutocompleteItems(buffer, allItems)
-          : [];
+        const filtered =
+          !isDismissed && buffer.startsWith('/') ? filterAutocompleteItems(buffer, allItems) : [];
 
         if (filtered.length > 0 && filtered[selectedIndex]) {
           const item = filtered[selectedIndex];
@@ -340,6 +486,15 @@ export async function promptWithSuggestions(
           cursor = buffer.length;
           selectedIndex = 0;
           scrollOffset = 0;
+          render();
+          return;
+        }
+
+        // When prompt buffer is empty, Tab toggles between Plan Mode and Build Mode (PDF requirement)
+        if (buffer.length === 0 && options.onTabToggleMode) {
+          options.onTabToggleMode();
+          currentPromptText =
+            typeof options.promptText === 'function' ? options.promptText() : options.promptText;
           render();
           return;
         }
@@ -354,9 +509,8 @@ export async function promptWithSuggestions(
 
       // Handle Up Arrow
       if (key.name === 'up') {
-        const filtered = !isDismissed && buffer.startsWith('/')
-          ? filterAutocompleteItems(buffer, allItems)
-          : [];
+        const filtered =
+          !isDismissed && buffer.startsWith('/') ? filterAutocompleteItems(buffer, allItems) : [];
 
         if (filtered.length > 0) {
           selectedIndex = (selectedIndex - 1 + filtered.length) % filtered.length;
@@ -376,9 +530,8 @@ export async function promptWithSuggestions(
 
       // Handle Down Arrow
       if (key.name === 'down') {
-        const filtered = !isDismissed && buffer.startsWith('/')
-          ? filterAutocompleteItems(buffer, allItems)
-          : [];
+        const filtered =
+          !isDismissed && buffer.startsWith('/') ? filterAutocompleteItems(buffer, allItems) : [];
 
         if (filtered.length > 0) {
           selectedIndex = (selectedIndex + 1) % filtered.length;
@@ -418,9 +571,8 @@ export async function promptWithSuggestions(
           render();
         } else {
           // At end of line: can autocomplete current match
-          const filtered = !isDismissed && buffer.startsWith('/')
-            ? filterAutocompleteItems(buffer, allItems)
-            : [];
+          const filtered =
+            !isDismissed && buffer.startsWith('/') ? filterAutocompleteItems(buffer, allItems) : [];
           if (filtered.length > 0 && filtered[selectedIndex]) {
             buffer = `${filtered[selectedIndex].prefix} `;
             cursor = buffer.length;

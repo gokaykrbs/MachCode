@@ -2,11 +2,15 @@ import type readline from 'node:readline/promises';
 import chalk from 'chalk';
 import { computeFileDiff } from './executor.js';
 import type { CommandToolPlan, WriteToolPlan } from '../tools/agentTools.js';
-import { isInteractiveTerminal, readLine, selectMenu, type MenuOption } from '../ui/terminalInput.js';
+import {
+  isInteractiveTerminal,
+  readLine,
+  selectMenu,
+  type MenuOption,
+} from '../ui/terminalInput.js';
 
 export type PermissionDecision =
-  | { allowed: true }
-  | { allowed: false; feedback?: string; cancelled?: boolean };
+  { allowed: true } | { allowed: false; feedback?: string; cancelled?: boolean };
 
 type Choice = 'yes' | 'always' | 'no';
 
@@ -14,7 +18,11 @@ type Choice = 'yes' | 'always' | 'no';
  * Abstraction over how the user is asked, so non-TTY sessions (tests, pipes) can answer via readline.
  */
 export interface PermissionPrompter {
-  choose(kind: 'write' | 'command', options: MenuOption<Choice>[], fullDiff?: string): Promise<Choice | 'cancel'>;
+  choose(
+    kind: 'write' | 'command',
+    options: MenuOption<Choice>[],
+    fullDiff?: string,
+  ): Promise<Choice | 'cancel'>;
   askFeedback(): Promise<string>;
 }
 
@@ -56,14 +64,43 @@ const MULTI_WORD_TOOLS = new Set([
   'dart',
 ]);
 
+const DANGEROUS_COMMAND_PATTERNS = [
+  /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r|--recursive\s+--force|--force\s+--recursive)\b/i,
+  /\brmdir\s+.*[/\\s]\b/i,
+  /\bdel\s+.*[/\\s][fs]\b/i,
+  /\bgit\s+push\s+.*(-f\b|--force\b)/i,
+  /\bgit\s+reset\s+--hard\b/i,
+  /\bgit\s+clean\s+(-[a-zA-Z]*f\b|--force\b)/i,
+  /\bdrop\s+(database|table)\b/i,
+  /\bformat\s+[a-zA-Z]:/i,
+  /\bdd\s+if=/i,
+  /:()\s*\{\s*:|:&\s*\};:/,
+  /\bmkfs\b/i,
+  /\bchmod\s+(-[a-zA-Z]*R\s+)?777\b/i,
+  /\bsudo\s+rm\b/i,
+];
+
+/**
+ * Checks whether a shell command matches known destructive or dangerous patterns
+ * (e.g. `rm -rf`, `git push --force`, `del /s /f`, disk format).
+ * Dangerous commands ALWAYS require explicit user confirmation and cannot be bypassed.
+ */
+export function isDangerousCommand(command: string): boolean {
+  const trimmed = command.trim();
+  return DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
 /**
  * Derives the "command type" used for session-wide "always allow" approvals.
  * `pnpm test --watch` → `pnpm test`, `git status` → `git status`, `ls -la` → `ls`.
- * Returns null for chained/redirected commands, which must always be confirmed individually.
+ * Returns null for chained/redirected commands or dangerous commands, which must always be confirmed individually.
  */
 export function commandPermissionPrefix(command: string): string | null {
   const trimmed = command.trim();
   if (trimmed.length === 0) {
+    return null;
+  }
+  if (isDangerousCommand(trimmed)) {
     return null;
   }
   if (/[;&|><`]|\$\(/.test(trimmed)) {
@@ -118,7 +155,10 @@ class LinePrompter implements PermissionPrompter {
     options: MenuOption<Choice>[],
     fullDiff?: string,
   ): Promise<Choice | 'cancel'> {
-    const keys = options.map((o) => o.shortcut).filter(Boolean).join('/');
+    const keys = options
+      .map((o) => o.shortcut)
+      .filter(Boolean)
+      .join('/');
     while (true) {
       const raw = await this.rl.question(`  ? Seçim [${keys}${fullDiff ? '/d' : ''}]: `);
       const ans = raw.trim().toLowerCase();
@@ -126,7 +166,8 @@ class LinePrompter implements PermissionPrompter {
       if (ans === 'a' || ans === 'always' || ans === 'hepsi') {
         return options.some((o) => o.value === 'always') ? 'always' : 'yes';
       }
-      if (ans === 'n' || ans === 'no' || ans === 'h' || ans === 'hayir' || ans === 'hayır') return 'no';
+      if (ans === 'n' || ans === 'no' || ans === 'h' || ans === 'hayir' || ans === 'hayır')
+        return 'no';
       if ((ans === 'd' || ans === 'diff') && fullDiff) {
         console.log(`${fullDiff}\n`);
         continue;
@@ -193,7 +234,14 @@ export class PermissionManager {
     const preApproved = !mustAsk && (autoApprove || this.allowAllEdits);
 
     if (this.print) {
-      this.printWriteCard(plan, diff.addedLines, diff.removedLines, diff.isNewFile, diff.diffPreview, preApproved);
+      this.printWriteCard(
+        plan,
+        diff.addedLines,
+        diff.removedLines,
+        diff.isNewFile,
+        diff.diffPreview,
+        preApproved,
+      );
     }
 
     if (preApproved) {
@@ -207,9 +255,7 @@ export class PermissionManager {
       };
     }
 
-    const options: MenuOption<Choice>[] = [
-      { label: 'Evet, uygula', value: 'yes', shortcut: 'y' },
-    ];
+    const options: MenuOption<Choice>[] = [{ label: 'Evet, uygula', value: 'yes', shortcut: 'y' }];
     if (!plan.outsideWorkspace) {
       options.push({
         label: 'Evet, ve bu oturumda tüm düzenlemelere izin ver',
@@ -226,14 +272,16 @@ export class PermissionManager {
   }
 
   async requestCommand(plan: CommandToolPlan): Promise<PermissionDecision> {
-    const prefix = commandPermissionPrefix(plan.command);
+    const dangerous = isDangerousCommand(plan.command);
+    const prefix = dangerous ? null : commandPermissionPrefix(plan.command);
     const sessionAllowed =
       prefix !== null &&
       Array.from(this.allowedCommandPrefixes).some((p) => commandMatchesPrefix(plan.command, p));
-    const preApproved = this.options.isAutoApprove() || sessionAllowed;
+    // Dangerous commands NEVER get pre-approved, even with auto-approve or session-allow
+    const preApproved = !dangerous && (this.options.isAutoApprove() || sessionAllowed);
 
     if (this.print) {
-      this.printCommandCard(plan, preApproved);
+      this.printCommandCard(plan, preApproved, dangerous);
     }
     if (preApproved) {
       return { allowed: true };
@@ -243,13 +291,16 @@ export class PermissionManager {
     if (!prompter) {
       return {
         allowed: false,
-        feedback:
-          'Non-interactive session without auto-approve: commands cannot be confirmed. Enable /approve auto or run with --yes.',
+        feedback: dangerous
+          ? 'Dangerous command execution blocked in non-interactive mode. Explicit user confirmation is required.'
+          : 'Non-interactive session without auto-approve: commands cannot be confirmed. Enable /approve auto or run with --yes.',
       };
     }
 
-    const options: MenuOption<Choice>[] = [{ label: 'Evet, çalıştır', value: 'yes', shortcut: 'y' }];
-    if (prefix) {
+    const options: MenuOption<Choice>[] = [
+      { label: 'Evet, çalıştır', value: 'yes', shortcut: 'y' },
+    ];
+    if (prefix && !dangerous) {
       options.push({
         label: `Evet, ve bu oturumda "${prefix}" komutlarına hep izin ver`,
         value: 'always',
@@ -260,7 +311,7 @@ export class PermissionManager {
 
     const choice = await prompter.choose('command', options);
     return this.finalizeChoice(choice, prompter, () => {
-      if (prefix) this.allowedCommandPrefixes.add(prefix);
+      if (prefix && !dangerous) this.allowedCommandPrefixes.add(prefix);
     });
   }
 
@@ -311,23 +362,38 @@ export class PermissionManager {
       );
     }
     if (!preApproved) {
-      lines.push(`  ${chalk.white.bold(isNewFile ? 'Bu dosya oluşturulsun mu?' : 'Bu değişiklik uygulansın mı?')}`);
+      lines.push(
+        `  ${chalk.white.bold(isNewFile ? 'Bu dosya oluşturulsun mu?' : 'Bu değişiklik uygulansın mı?')}`,
+      );
     }
     console.log(`\n${lines.join('\n')}`);
   }
 
-  private printCommandCard(plan: CommandToolPlan, preApproved: boolean): void {
-    const border = chalk.gray;
+  private printCommandCard(plan: CommandToolPlan, preApproved: boolean, dangerous = false): void {
+    const border = dangerous ? chalk.red : chalk.gray;
     const lines: string[] = [];
-    lines.push(`${chalk.yellow('●')} ${chalk.white.bold('Run')}${chalk.gray('(')}${chalk.white(plan.command)}${chalk.gray(')')}`);
+    const runHeader = dangerous
+      ? `${chalk.bgRed.white.bold(' ⚠️ DANGER ')} ${chalk.red.bold('Run')}${chalk.gray('(')}${chalk.white(plan.command)}${chalk.gray(')')}`
+      : `${chalk.yellow('●')} ${chalk.white.bold('Run')}${chalk.gray('(')}${chalk.white(plan.command)}${chalk.gray(')')}`;
+    lines.push(runHeader);
     if (!preApproved) {
       lines.push(border('  ╭───────────────────────────────────────────────────────────────'));
+      if (dangerous) {
+        lines.push(
+          `${border('  │')} ${chalk.bgRed.white.bold(' GÜVENLİK UYARISI ')} ${chalk.red.bold('Tehlikeli sistem komutu tespit edildi!')}`,
+        );
+        lines.push(
+          `${border('  │')} ${chalk.yellow('Bu komut dosya sistemi veya git geçmişi üzerinde geri alınamaz değişiklikler yapabilir.')}`,
+        );
+      }
       for (const row of plan.command.split('\n')) {
         lines.push(`${border('  │')} ${chalk.cyan('$')} ${chalk.white(row)}`);
       }
       lines.push(`${border('  │')} ${chalk.dim(`konum: ${plan.cwd}`)}`);
       lines.push(border('  ╰───────────────────────────────────────────────────────────────'));
-      lines.push(`  ${chalk.white.bold('Bu komut çalıştırılsın mı?')}`);
+      lines.push(
+        `  ${chalk.white.bold(dangerous ? chalk.red.bold('Bu tehlikeli komut çalıştırılsın mı? [Açık Onay]') : 'Bu komut çalıştırılsın mı?')}`,
+      );
     }
     console.log(`\n${lines.join('\n')}`);
   }

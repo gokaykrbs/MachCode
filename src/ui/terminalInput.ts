@@ -28,7 +28,10 @@ export function isInteractiveTerminal(): boolean {
 function dispatchKeypress(str: string | undefined, key: readline.Key | undefined): void {
   const handler = handlerStack[handlerStack.length - 1];
   if (handler) {
-    handler(str, key ?? { sequence: str ?? '', name: undefined, ctrl: false, meta: false, shift: false });
+    handler(
+      str,
+      key ?? { sequence: str ?? '', name: undefined, ctrl: false, meta: false, shift: false },
+    );
   }
 }
 

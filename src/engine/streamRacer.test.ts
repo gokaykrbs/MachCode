@@ -255,12 +255,8 @@ describe('Tiered Priority Fallback Engine (tieredFallback / raceModels)', () => 
     const mockFetch = createMockNimFetch(
       {
         'strong-a': { errorStatus: 500 },
-        'strong-b': [
-          { delayMs: 10, content: '```ts\nexport const strongB = true;\n```' },
-        ],
-        'weak-a': [
-          { delayMs: 10, content: '```ts\nexport const weakA = true;\n```' },
-        ],
+        'strong-b': [{ delayMs: 10, content: '```ts\nexport const strongB = true;\n```' }],
+        'weak-a': [{ delayMs: 10, content: '```ts\nexport const weakA = true;\n```' }],
       },
       recordedRequests,
     );
