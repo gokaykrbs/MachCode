@@ -61,7 +61,10 @@ export function generateDeterministicSummary(turns: SessionMessage[]): string {
 
   for (const t of turns) {
     if (t.role === 'user') {
-      const firstLine = t.content.split('\n')[0].replace(/^\[.*?\]:\s*/, '').trim();
+      const firstLine = t.content
+        .split('\n')[0]
+        .replace(/^\[.*?\]:\s*/, '')
+        .trim();
       if (firstLine.length > 0) {
         userPrompts.push(firstLine.slice(0, 100));
       }

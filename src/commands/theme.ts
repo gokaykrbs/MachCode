@@ -1,10 +1,5 @@
 import chalk from 'chalk';
-import {
-  listThemes,
-  setActiveTheme,
-  saveThemePreference,
-  getActiveTheme,
-} from '../ui/theme.js';
+import { listThemes, saveThemePreference, getActiveTheme } from '../ui/theme.js';
 import type { SlashCommand, CommandContext } from './types.js';
 
 export const themeCommand: SlashCommand = {
@@ -15,22 +10,29 @@ export const themeCommand: SlashCommand = {
   aliases: ['themes'],
   execute: async (args: string, _context: CommandContext) => {
     const raw = args.trim().toLowerCase();
-    const currentTheme = getActiveTheme();
 
     if (!raw) {
-      console.log(chalk.cyan.bold('\n══════════════════════════════════════════════════════════════════'));
+      console.log(
+        chalk.cyan.bold('\n══════════════════════════════════════════════════════════════════'),
+      );
       console.log(chalk.cyan.bold('                 MACHCODE TERMINAL THEMES'));
-      console.log(chalk.cyan.bold('══════════════════════════════════════════════════════════════════\n'));
+      console.log(
+        chalk.cyan.bold('══════════════════════════════════════════════════════════════════\n'),
+      );
 
       const themes = listThemes();
       for (const t of themes) {
         const activeMarker = t.active ? chalk.green.bold('✔ ACTIVE ') : chalk.gray('         ');
         const themeNameCol = chalk.white.bold(t.name.padEnd(14));
-        console.log(`  ${activeMarker} ${themeNameCol} ${chalk.gray('•')} ${chalk.yellow(t.displayName.padEnd(22))} ${chalk.dim(t.description)}`);
+        console.log(
+          `  ${activeMarker} ${themeNameCol} ${chalk.gray('•')} ${chalk.yellow(t.displayName.padEnd(22))} ${chalk.dim(t.description)}`,
+        );
       }
 
       console.log(
-        chalk.dim('\nTip: Type /theme <name> to switch immediately (e.g. /theme dracula or /theme matrix).\n'),
+        chalk.dim(
+          '\nTip: Type /theme <name> to switch immediately (e.g. /theme dracula or /theme matrix).\n',
+        ),
       );
       return;
     }

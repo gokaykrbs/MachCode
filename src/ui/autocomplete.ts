@@ -124,11 +124,31 @@ export function buildAutocompleteItems(
       displayCommand: '/run <cmd>',
       description: 'Execute shell command directly in workspace',
     },
-    { prefix: '/status', displayCommand: '/status', description: 'Show interactive session status card and bar' },
-    { prefix: '/theme', displayCommand: '/theme [name]', description: 'Switch terminal theme (tokyo-night, dracula, matrix, monokai)' },
-    { prefix: '/model', displayCommand: '/model [model-id|reset]', description: 'Pin queries to model or view racing pools' },
-    { prefix: '/mode', displayCommand: '/mode [plan|build|toggle]', description: 'Switch between Plan (read-only) and Build (full agent) modes' },
-    { prefix: '/build', displayCommand: '/build', description: 'Switch session directly to Build Mode' },
+    {
+      prefix: '/status',
+      displayCommand: '/status',
+      description: 'Show interactive session status card and bar',
+    },
+    {
+      prefix: '/theme',
+      displayCommand: '/theme [name]',
+      description: 'Switch terminal theme (tokyo-night, dracula, matrix, monokai)',
+    },
+    {
+      prefix: '/model',
+      displayCommand: '/model [model-id|reset]',
+      description: 'Pin queries to model or view racing pools',
+    },
+    {
+      prefix: '/mode',
+      displayCommand: '/mode [plan|build|toggle]',
+      description: 'Switch between Plan (read-only) and Build (full agent) modes',
+    },
+    {
+      prefix: '/build',
+      displayCommand: '/build',
+      description: 'Switch session directly to Build Mode',
+    },
     { prefix: '/help', displayCommand: '/help', description: 'Print table of all slash commands' },
     { prefix: '/clear', displayCommand: '/clear', description: 'Clear the terminal screen' },
     { prefix: '/exit', displayCommand: '/exit', description: 'Gracefully exit the MachCode CLI' },
@@ -463,7 +483,11 @@ export async function promptWithSuggestions(
           const isSelected = globalIdx === selectedIndex;
 
           const pointer = isSelected ? chalk.cyan.bold(' ❯ ') : '   ';
-          const cmdColor = isSelected ? chalk.white.bold : item.category === 'File' ? chalk.magenta : chalk.cyan;
+          const cmdColor = isSelected
+            ? chalk.white.bold
+            : item.category === 'File'
+              ? chalk.magenta
+              : chalk.cyan;
           const catBadge =
             item.category === 'Skill'
               ? chalk.bgGreen.black.bold(' SKILL ')

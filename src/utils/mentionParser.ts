@@ -117,7 +117,15 @@ export async function getWorkspaceFileCandidates(
   const normalizedPrefix = prefix.replace(/^@/, '').toLowerCase();
   const results: string[] = [];
 
-  const ignoredDirs = new Set(['node_modules', '.git', 'dist', '.pnpm-store', 'build', '.next', 'coverage']);
+  const ignoredDirs = new Set([
+    'node_modules',
+    '.git',
+    'dist',
+    '.pnpm-store',
+    'build',
+    '.next',
+    'coverage',
+  ]);
 
   async function walk(dir: string, currentDepth: number = 0): Promise<void> {
     if (results.length >= maxResults || currentDepth > 4) return;
@@ -135,7 +143,10 @@ export async function getWorkspaceFileCandidates(
             await walk(fullPath, currentDepth + 1);
           }
         } else if (entry.isFile()) {
-          if (!entry.name.startsWith('.') && (normalizedPrefix === '' || relPath.toLowerCase().includes(normalizedPrefix))) {
+          if (
+            !entry.name.startsWith('.') &&
+            (normalizedPrefix === '' || relPath.toLowerCase().includes(normalizedPrefix))
+          ) {
             results.push(`@${relPath}`);
           }
         }

@@ -41,7 +41,7 @@ export function getSessionsDir(): string {
 }
 
 export function getSessionFilePath(sessionId: string): string {
-  const cleanId = sessionId.replace(/[^a-zA-Z0-9_\-]/g, '_');
+  const cleanId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
   return path.join(getSessionsDir(), `${cleanId}.json`);
 }
 

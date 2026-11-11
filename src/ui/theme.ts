@@ -161,7 +161,12 @@ export function setActiveTheme(name: string): boolean {
   return false;
 }
 
-export function listThemes(): Array<{ name: string; displayName: string; description: string; active: boolean }> {
+export function listThemes(): Array<{
+  name: string;
+  displayName: string;
+  description: string;
+  active: boolean;
+}> {
   return Object.values(THEMES).map((theme) => ({
     name: theme.name,
     displayName: theme.displayName,

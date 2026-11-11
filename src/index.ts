@@ -1221,7 +1221,11 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         );
       }
     } else if (options.writeToStdout ?? true) {
-      console.log(chalk.yellow(`\n⚠️  No previous session found matching "${resumeTarget}". Starting fresh session.\n`));
+      console.log(
+        chalk.yellow(
+          `\n⚠️  No previous session found matching "${resumeTarget}". Starting fresh session.\n`,
+        ),
+      );
     }
   }
 
@@ -1413,7 +1417,9 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         const sb = renderStatusBar({
           mode: activeMode,
           baseDir,
-          strongPoolCount: commandContext.pinnedModel ? 1 : (commandContext.strongPool?.length ?? strongPool.length),
+          strongPoolCount: commandContext.pinnedModel
+            ? 1
+            : (commandContext.strongPool?.length ?? strongPool.length),
           activeModel: commandContext.pinnedModel ?? commandContext.heavyModel,
           isPinned: Boolean(commandContext.pinnedModel),
           gitBranch: branch ?? undefined,

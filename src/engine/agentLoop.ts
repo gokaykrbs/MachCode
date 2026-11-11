@@ -626,9 +626,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     // Step limit check with optional continuation (PDF Phase 4: 20-step limit)
     if (stepsTaken >= maxSteps && options.askUserToContinue) {
       if (writeToStdout) {
-        console.log(
-          chalk.yellow(`\n⚠️  Adım sınırına (${maxSteps} adım) ulaşıldı.`),
-        );
+        console.log(chalk.yellow(`\n⚠️  Adım sınırına (${maxSteps} adım) ulaşıldı.`));
       }
       const shouldContinue = await options.askUserToContinue(stepsTaken);
       if (shouldContinue) {

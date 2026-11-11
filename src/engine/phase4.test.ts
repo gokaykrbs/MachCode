@@ -13,10 +13,7 @@ import {
   summarizeOldestTurns,
   generateDeterministicSummary,
 } from './contextSummarizer.js';
-import {
-  createDefaultCommandRegistry,
-  type CommandContext,
-} from '../commands/index.js';
+import { createDefaultCommandRegistry, type CommandContext } from '../commands/index.js';
 import type { SessionMessage } from '../index.js';
 
 describe('Phase 4: Resilience, Session Management & Context Summarization', () => {
@@ -136,12 +133,34 @@ describe('Phase 4: Resilience, Session Management & Context Summarization', () =
       addedContextFiles: new Set<string>(['src/index.ts']),
       fileSnapshots: [],
       tokenStats: { estimatedPromptTokens: 50, estimatedCompletionTokens: 50, totalTurns: 1 },
-      rl: {} as any,
+      rl: {} as unknown as import('node:readline/promises').Interface,
       shouldExit: false,
       sessionId: `mock_test_${Date.now()}`,
       runMachCode: async () => ({
-        raceResult: {} as any,
-        executionSummary: { createdFiles: [], modifiedFiles: [], errorFiles: [], skipped: false, formattedSummary: '' },
+        raceResult: {
+          winnerModel: 'mock',
+          winnerRole: 'heavy',
+          handoffOccurred: false,
+          handoffElapsedMs: null,
+          lightAborted: false,
+          heavyAborted: false,
+          finalTerminalOutput: '',
+          parseResult: {
+            plan: '',
+            extractedCode: '',
+            codeBlocks: [],
+            visibleOutput: '',
+            question: null,
+            isHalted: false,
+          },
+        },
+        executionSummary: {
+          createdFiles: [],
+          modifiedFiles: [],
+          errorFiles: [],
+          skipped: false,
+          formattedSummary: '',
+        },
         toolsLoaded: [],
         questionRounds: 0,
       }),

@@ -1,5 +1,4 @@
 import chalk from 'chalk';
-import path from 'node:path';
 import {
   saveSession,
   loadSession,
@@ -55,9 +54,13 @@ export const sessionsCommand: SlashCommand = {
     const theme = getActiveTheme();
     const sessions = await listSessions(context.baseDir);
 
-    console.log(theme.primary('\n══════════════════════════════════════════════════════════════════'));
+    console.log(
+      theme.primary('\n══════════════════════════════════════════════════════════════════'),
+    );
     console.log(theme.primary('                     RECORDED SESSIONS'));
-    console.log(theme.primary('══════════════════════════════════════════════════════════════════\n'));
+    console.log(
+      theme.primary('══════════════════════════════════════════════════════════════════\n'),
+    );
 
     if (sessions.length === 0) {
       console.log(chalk.gray('  No previous sessions found for this workspace.'));
@@ -73,11 +76,17 @@ export const sessionsCommand: SlashCommand = {
       const tokenPart = `${s.totalTokens.toLocaleString()} tokens`;
       const turnPart = `${s.turnCount} turns`;
 
-      console.log(`  ${marker} ${chalk.white.bold(s.sessionId.padEnd(16))} ${namePart}${chalk.dim(`(${turnPart}, ${tokenPart})`)}`);
+      console.log(
+        `  ${marker} ${chalk.white.bold(s.sessionId.padEnd(16))} ${namePart}${chalk.dim(`(${turnPart}, ${tokenPart})`)}`,
+      );
       console.log(`              ${chalk.dim(`Saved: ${datePart} • Mode: ${s.mode}`)}`);
     }
 
-    console.log(chalk.dim('\nTip: Type /resume <sessionId> or /resume latest to restore conversation history.\n'));
+    console.log(
+      chalk.dim(
+        '\nTip: Type /resume <sessionId> or /resume latest to restore conversation history.\n',
+      ),
+    );
   },
 };
 
@@ -94,7 +103,9 @@ export const resumeCommand: SlashCommand = {
     const loaded = await loadSession(target, context.baseDir);
     if (!loaded) {
       console.log(
-        chalk.red(`\n✖ Could not find session "${target}". Type /sessions to view available sessions.\n`),
+        chalk.red(
+          `\n✖ Could not find session "${target}". Type /sessions to view available sessions.\n`,
+        ),
       );
       return;
     }
@@ -110,7 +121,8 @@ export const resumeCommand: SlashCommand = {
     }
 
     context.tokenStats.estimatedPromptTokens = loaded.tokenStats?.estimatedPromptTokens ?? 0;
-    context.tokenStats.estimatedCompletionTokens = loaded.tokenStats?.estimatedCompletionTokens ?? 0;
+    context.tokenStats.estimatedCompletionTokens =
+      loaded.tokenStats?.estimatedCompletionTokens ?? 0;
     context.tokenStats.totalTurns = loaded.tokenStats?.totalTurns ?? 0;
 
     if (loaded.mode) {

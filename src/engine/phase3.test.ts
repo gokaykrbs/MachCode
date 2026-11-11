@@ -1,29 +1,11 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import {
-  listThemes,
-  setActiveTheme,
-  getActiveTheme,
-  THEMES,
-} from '../ui/theme.js';
-import {
-  getGitBranch,
-  formatTokenCount,
-  renderStatusBar,
-} from '../ui/statusBar.js';
-import {
-  parseAndExpandMentions,
-  getWorkspaceFileCandidates,
-} from '../utils/mentionParser.js';
-import {
-  createDefaultCommandRegistry,
-  type CommandContext,
-} from '../commands/index.js';
-import {
-  buildAutocompleteItems,
-  filterAutocompleteItems,
-} from '../ui/autocomplete.js';
+import type readline from 'node:readline/promises';
+import { listThemes, setActiveTheme, getActiveTheme } from '../ui/theme.js';
+import { getGitBranch, formatTokenCount, renderStatusBar } from '../ui/statusBar.js';
+import { parseAndExpandMentions, getWorkspaceFileCandidates } from '../utils/mentionParser.js';
+import { createDefaultCommandRegistry, type CommandContext } from '../commands/index.js';
+import { buildAutocompleteItems, filterAutocompleteItems } from '../ui/autocomplete.js';
 
 describe('Phase 3: Terminal Experience, Status Bar, @ Mentions & Themes', () => {
   test('Theme System: lists themes and updates active theme palettes', () => {
@@ -94,7 +76,10 @@ describe('Phase 3: Terminal Experience, Status Bar, @ Mentions & Themes', () => 
     const pkgMention = result.mentionedFiles.find((f) => f.mentionText === '@package.json');
     assert.ok(pkgMention, 'Should detect @package.json');
     assert.ok(pkgMention.lineCount > 5, 'Should count lines in package.json');
-    assert.ok(pkgMention.content.includes('"name": "machcode"'), 'Should read package.json contents');
+    assert.ok(
+      pkgMention.content.includes('"name": "machcode"'),
+      'Should read package.json contents',
+    );
     assert.ok(result.augmentedContext.includes('--- File Context (@package.json) ---'));
 
     // Test file candidate discovery for autocomplete
@@ -124,7 +109,7 @@ describe('Phase 3: Terminal Experience, Status Bar, @ Mentions & Themes', () => 
       addedContextFiles: new Set<string>(),
       fileSnapshots: [],
       tokenStats: { estimatedPromptTokens: 100, estimatedCompletionTokens: 200, totalTurns: 1 },
-      rl: {} as any,
+      rl: {} as unknown as readline.Interface,
       shouldExit: false,
       mode: currentMode,
       setMode: (m) => {
@@ -135,8 +120,30 @@ describe('Phase 3: Terminal Experience, Status Bar, @ Mentions & Themes', () => 
         pinnedModel = m;
       },
       runMachCode: async () => ({
-        raceResult: {} as any,
-        executionSummary: { createdFiles: [], modifiedFiles: [], errorFiles: [], skipped: false, formattedSummary: '' },
+        raceResult: {
+          winnerModel: 'mock',
+          winnerRole: 'heavy',
+          handoffOccurred: false,
+          handoffElapsedMs: null,
+          lightAborted: false,
+          heavyAborted: false,
+          finalTerminalOutput: '',
+          parseResult: {
+            plan: '',
+            extractedCode: '',
+            codeBlocks: [],
+            visibleOutput: '',
+            question: null,
+            isHalted: false,
+          },
+        },
+        executionSummary: {
+          createdFiles: [],
+          modifiedFiles: [],
+          errorFiles: [],
+          skipped: false,
+          formattedSummary: '',
+        },
         toolsLoaded: [],
         questionRounds: 0,
       }),

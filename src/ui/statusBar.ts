@@ -102,9 +102,7 @@ export function renderStatusBar(
   // 1. Mode Badge
   const modeText = info.mode === 'plan' ? 'PLAN' : 'BUILD';
   const modeBadge =
-    info.mode === 'plan'
-      ? theme.planMode(`[${modeText}]`)
-      : theme.buildMode(`[${modeText}]`);
+    info.mode === 'plan' ? theme.planMode(`[${modeText}]`) : theme.buildMode(`[${modeText}]`);
 
   // 2. Model / Racing Engine Badge
   let modelBadge = '';
@@ -133,19 +131,25 @@ export function renderStatusBar(
   const tokensBadge = theme.muted(`🪙 ${formatTokenCount(tokenCount)} tokens`);
 
   // 6. Approval Policy
-  const autoBadge = info.autoApprove
-    ? theme.warning('⚡ auto')
-    : theme.muted('🛡️ ask');
+  const autoBadge = info.autoApprove ? theme.warning('⚡ auto') : theme.muted('🛡️ ask');
 
   // 7. Theme Indicator
   const themeBadge = theme.muted(`🎨 ${theme.name}`);
 
   // Assemble status segments
   const sep = theme.muted(' │ ');
-  const rawSegments = [modeBadge, modelBadge, dirBadge, gitBadge, tokensBadge, autoBadge, themeBadge];
+  const rawSegments = [
+    modeBadge,
+    modelBadge,
+    dirBadge,
+    gitBadge,
+    tokensBadge,
+    autoBadge,
+    themeBadge,
+  ];
 
   // Gradually drop right-most segments if terminal width is constrained
-  let currentSegments = [...rawSegments];
+  const currentSegments = [...rawSegments];
   let line = currentSegments.join(sep);
 
   while (stripAnsi(line).length > width - 2 && currentSegments.length > 2) {
@@ -163,7 +167,9 @@ export function printStatusCard(info: StatusBarInfo): void {
   const theme = getActiveTheme();
   const branch = info.gitBranch ?? getGitBranch(info.baseDir);
 
-  console.log(theme.primary('\n══════════════════════════════════════════════════════════════════'));
+  console.log(
+    theme.primary('\n══════════════════════════════════════════════════════════════════'),
+  );
   console.log(theme.primary('                     MACHCODE STATUS REPORT'));
   console.log(theme.primary('══════════════════════════════════════════════════════════════════'));
 
@@ -174,16 +180,16 @@ export function printStatusCard(info: StatusBarInfo): void {
         : theme.buildMode('BUILD MODE (Full Agent, file editing & shell execution enabled)')
     }`,
   );
-  console.log(
-    `  ${chalk.bold('Workspace Path:')}     ${chalk.white(path.resolve(info.baseDir))}`,
-  );
+  console.log(`  ${chalk.bold('Workspace Path:')}     ${chalk.white(path.resolve(info.baseDir))}`);
   console.log(
     `  ${chalk.bold('Git Branch:')}         ${branch ? theme.secondary(`🌿 ${branch}`) : chalk.gray('None (Not a git repository)')}`,
   );
   console.log(
     `  ${chalk.bold('Racing Pool:')}        ${
       info.strongPoolCount
-        ? theme.primary(`57+ Models racing in parallel (${info.strongPoolCount} active models in pool)`)
+        ? theme.primary(
+            `57+ Models racing in parallel (${info.strongPoolCount} active models in pool)`,
+          )
         : chalk.gray('Autonomous dynamic model selection')
     }`,
   );
@@ -208,5 +214,7 @@ export function printStatusCard(info: StatusBarInfo): void {
   if (info.sessionId) {
     console.log(`  ${chalk.bold('Session Identifier:')} ${chalk.dim(info.sessionId)}`);
   }
-  console.log(theme.primary('══════════════════════════════════════════════════════════════════\n'));
+  console.log(
+    theme.primary('══════════════════════════════════════════════════════════════════\n'),
+  );
 }

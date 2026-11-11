@@ -13,9 +13,13 @@ export const modelCommand: SlashCommand = {
     const theme = getActiveTheme();
 
     if (!raw) {
-      console.log(theme.primary('\n══════════════════════════════════════════════════════════════════'));
+      console.log(
+        theme.primary('\n══════════════════════════════════════════════════════════════════'),
+      );
       console.log(theme.primary('               ACTIVE NVIDIA NIM MODEL RACING POOL'));
-      console.log(theme.primary('══════════════════════════════════════════════════════════════════\n'));
+      console.log(
+        theme.primary('══════════════════════════════════════════════════════════════════\n'),
+      );
 
       if (context.pinnedModel) {
         console.log(
@@ -28,7 +32,9 @@ export const modelCommand: SlashCommand = {
       }
 
       console.log(`  ${chalk.bold('Fast Lightweight Model:')} ${chalk.yellow(context.lightModel)}`);
-      console.log(`  ${chalk.bold('Smart Heavyweight Model:')} ${chalk.yellow(context.heavyModel)}\n`);
+      console.log(
+        `  ${chalk.bold('Smart Heavyweight Model:')} ${chalk.yellow(context.heavyModel)}\n`,
+      );
 
       const strongPool = context.strongPool ?? [];
       const weakPool = context.weakPool ?? [];
@@ -40,7 +46,9 @@ export const modelCommand: SlashCommand = {
         console.log(`  ${marker}${chalk.white(m)}`);
       }
       if (strongPool.length > 15) {
-        console.log(chalk.dim(`  ... and ${strongPool.length - 15} more frontier models in parallel race`));
+        console.log(
+          chalk.dim(`  ... and ${strongPool.length - 15} more frontier models in parallel race`),
+        );
       }
 
       if (weakPool.length > 0) {
@@ -51,12 +59,18 @@ export const modelCommand: SlashCommand = {
       }
 
       console.log(
-        chalk.dim('\nTip: To pin a specific model, type /model <model-id>. To resume full racing, type /model reset.\n'),
+        chalk.dim(
+          '\nTip: To pin a specific model, type /model <model-id>. To resume full racing, type /model reset.\n',
+        ),
       );
       return;
     }
 
-    if (raw.toLowerCase() === 'reset' || raw.toLowerCase() === 'auto' || raw.toLowerCase() === 'race') {
+    if (
+      raw.toLowerCase() === 'reset' ||
+      raw.toLowerCase() === 'auto' ||
+      raw.toLowerCase() === 'race'
+    ) {
       if (context.setPinnedModel) {
         context.setPinnedModel(undefined);
       }
