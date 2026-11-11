@@ -42,6 +42,7 @@ export interface AgentLoopOptions {
   writeToStdout?: boolean;
   fetchImpl?: typeof fetch;
   onBeforeWrite?: (absPath: string, cwd: string) => Promise<void> | void;
+  askUserToContinue?: (stepsTaken: number) => Promise<boolean>;
   signal?: AbortSignal;
 }
 
@@ -289,7 +290,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
   const cwd = options.cwd;
   const endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-  const maxSteps = options.maxSteps ?? 25;
+  let maxSteps = options.maxSteps ?? 20;
   const writeToStdout = options.writeToStdout ?? true;
 
   const permissionManager =
@@ -607,13 +608,47 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         }
       }
 
+      // Truncate long tool outputs to protect LLM context window (PDF Phase 4 requirement)
+      let toolOutput = outcome.output;
+      const MAX_OUTPUT_CHARS = 24000;
+      if (toolOutput.length > MAX_OUTPUT_CHARS) {
+        toolOutput = `${toolOutput.slice(0, MAX_OUTPUT_CHARS)}\n... [Tool output truncated: ${toolOutput.length - MAX_OUTPUT_CHARS} characters omitted to preserve context]`;
+      }
+
       messages.push({
         role: 'tool',
         tool_call_id: toolCall.id,
         name: toolCall.name,
-        content: outcome.output,
+        content: toolOutput,
       });
     }
+
+    // Step limit check with optional continuation (PDF Phase 4: 20-step limit)
+    if (stepsTaken >= maxSteps && options.askUserToContinue) {
+      if (writeToStdout) {
+        console.log(
+          chalk.yellow(`\n⚠️  Adım sınırına (${maxSteps} adım) ulaşıldı.`),
+        );
+      }
+      const shouldContinue = await options.askUserToContinue(stepsTaken);
+      if (shouldContinue) {
+        maxSteps += 10;
+        if (writeToStdout) {
+          console.log(chalk.green(`✔ 10 adım daha eklendi (Yeni limit: ${maxSteps} adım).\n`));
+        }
+      } else {
+        if (writeToStdout) {
+          console.log(chalk.gray('  Döngü kullanıcı isteğiyle sonlandırıldı.\n'));
+        }
+        break;
+      }
+    }
+  }
+
+  if (stepsTaken >= maxSteps && writeToStdout) {
+    console.log(
+      chalk.yellow.bold(`\n⚠️  Adım sınırına ulaşıldı (${maxSteps} adım). Döngü tamamlandı.\n`),
+    );
   }
 
   return {

@@ -26,6 +26,12 @@ program
   )
   .option('-y, --yes', 'Automatically approve and apply file changes without prompting')
   .option('--auto-approve', 'Alias of --yes: apply file changes without prompting')
+  .option(
+    '-r, --resume [sessionId]',
+    'Resume previous session by ID, or latest session if omitted',
+  )
+  .option('--mode <mode>', 'Initial mode: build (default) or plan (read-only)')
+  .option('--theme <theme>', 'Terminal color theme (tokyo-night, dracula, matrix, monokai, cyberpunk, minimal)')
   .argument('[prompt...]', 'Optional coding instruction to launch in interactive REPL session')
   .action(
     async (
@@ -37,11 +43,23 @@ program
         window: string;
         autoApprove?: boolean;
         yes?: boolean;
+        resume?: string | boolean;
+        mode?: string;
+        theme?: string;
       },
     ) => {
       const initialPrompt =
         promptParts && promptParts.length > 0 ? promptParts.join(' ').trim() : undefined;
       const handoffWindowMs = Number.parseInt(options.window, 10) || DEFAULT_HANDOFF_WINDOW_MS;
+
+      const resumeLatest = options.resume === true || options.resume === 'latest';
+      const resumeSessionId = typeof options.resume === 'string' && options.resume !== 'latest' ? options.resume : undefined;
+      const initialMode = options.mode === 'plan' ? 'plan' : 'build';
+
+      if (options.theme) {
+        const { setActiveTheme } = await import('../src/index.js');
+        setActiveTheme(options.theme);
+      }
 
       await startRepl({
         initialPrompt,
@@ -51,6 +69,9 @@ program
         handoffWindowMs,
         autoApprove: Boolean(options.autoApprove || options.yes),
         agentMode: true,
+        resumeLatest,
+        resumeSessionId,
+        initialMode,
       });
     },
   );

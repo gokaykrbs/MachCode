@@ -40,6 +40,8 @@ import { buildAutocompleteItems, promptWithSuggestions } from './ui/autocomplete
 import { loadSavedTheme, getActiveTheme } from './ui/theme.js';
 import { renderStatusBar, getGitBranch } from './ui/statusBar.js';
 import { parseAndExpandMentions } from './utils/mentionParser.js';
+import { saveSession, loadSession } from './engine/sessionManager.js';
+import { summarizeOldestTurns } from './engine/contextSummarizer.js';
 
 export interface SessionMessage {
   role: 'user' | 'assistant';
@@ -1085,6 +1087,14 @@ export interface ReplOptions extends MachCodeRunOptions {
    * Optional injected readline interface (useful for automated testing).
    */
   rlInterface?: readline.Interface;
+  /**
+   * Optional session ID or name to resume from disk.
+   */
+  resumeSessionId?: string;
+  /**
+   * When true, resumes the latest saved session in this workspace.
+   */
+  resumeLatest?: boolean;
 }
 
 export interface ReplBannerOptions {
@@ -1170,12 +1180,50 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           : [...VERIFIED_WEAK_POOL_MODELS];
 
   const handoffWindowMs = options.handoffWindowMs ?? DEFAULT_HANDOFF_WINDOW_MS;
-  const sessionId = `mc_${Math.random().toString(36).substring(2, 10)}`;
+  let sessionId = `mc_${Math.random().toString(36).substring(2, 10)}`;
   // Load saved theme preference
   await loadSavedTheme();
   // Interactive terminal sessions default to Ask-Before-Write (autoApprove: false) unless overridden
   const initialAutoApprove = options.autoApprove ?? !(options.writeToStdout ?? true);
   let activeMode: 'build' | 'plan' = options.initialMode ?? 'build';
+
+  // Session state tracking
+  const sessionHistory: SessionMessage[] = [...(options.history ?? [])];
+  const addedContextFiles = new Set<string>();
+  const fileSnapshots: FileSnapshot[] = [];
+  const tokenStats: TokenStats = {
+    estimatedPromptTokens: 0,
+    estimatedCompletionTokens: 0,
+    totalTurns: 0,
+  };
+
+  // Resume session if requested via CLI flag (--resume [id])
+  if (options.resumeSessionId || options.resumeLatest) {
+    const resumeTarget = options.resumeLatest ? 'latest' : options.resumeSessionId;
+    const loaded = await loadSession(resumeTarget, baseDir);
+    if (loaded) {
+      sessionId = loaded.sessionId;
+      sessionHistory.push(...loaded.history);
+      for (const f of loaded.addedFiles || []) {
+        addedContextFiles.add(f);
+      }
+      tokenStats.estimatedPromptTokens = loaded.tokenStats?.estimatedPromptTokens ?? 0;
+      tokenStats.estimatedCompletionTokens = loaded.tokenStats?.estimatedCompletionTokens ?? 0;
+      tokenStats.totalTurns = loaded.tokenStats?.totalTurns ?? 0;
+      if (loaded.mode) {
+        activeMode = loaded.mode;
+      }
+      if (options.writeToStdout ?? true) {
+        console.log(
+          chalk.green(
+            `\n✔ Resumed session ${chalk.white.bold(loaded.sessionId)}${loaded.name ? ` ("${loaded.name}")` : ''} (${Math.floor(loaded.history.length / 2)} turns restored)\n`,
+          ),
+        );
+      }
+    } else if (options.writeToStdout ?? true) {
+      console.log(chalk.yellow(`\n⚠️  No previous session found matching "${resumeTarget}". Starting fresh session.\n`));
+    }
+  }
 
   // Display startup dashboard
   if (options.writeToStdout ?? true) {
@@ -1187,16 +1235,6 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       mode: activeMode,
     });
   }
-
-  // Session state tracking
-  const sessionHistory: SessionMessage[] = [...(options.history ?? [])];
-  const addedContextFiles = new Set<string>();
-  const fileSnapshots: FileSnapshot[] = [];
-  const tokenStats: TokenStats = {
-    estimatedPromptTokens: 0,
-    estimatedCompletionTokens: 0,
-    totalTurns: 0,
-  };
 
   const commandRegistry = createDefaultCommandRegistry();
 
@@ -1221,6 +1259,24 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   ): Promise<MachCodeRunResult> => {
     rl?.pause?.();
     try {
+      // Context summarization check (PDF Phase 4: prevent context overflow)
+      const summaryResult = await summarizeOldestTurns(sessionHistory, {
+        maxContextTokens: 12000,
+        turnsToSummarize: 8,
+        keepRecentTurns: 4,
+      });
+      if (summaryResult.summarized) {
+        sessionHistory.length = 0;
+        sessionHistory.push(...summaryResult.history);
+        if (options.writeToStdout ?? true) {
+          console.log(
+            chalk.cyan(
+              `  🧠 [Context Condensed: Saved ${summaryResult.savedTokens} tokens across ${summaryResult.summarizedTurnsCount} earlier turns]`,
+            ),
+          );
+        }
+      }
+
       // Parse and expand @file mentions in prompt
       const mentionResult = await parseAndExpandMentions(prompt, baseDir);
       if (mentionResult.mentionedFiles.length > 0) {
@@ -1332,6 +1388,23 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           ? `Modified files: ${result.executionSummary.modifiedFiles.map((f) => f.relativePath).join(', ')}`
           : 'Task completed.');
       sessionHistory.push({ role: 'assistant', content: assistantOutput });
+
+      // Auto-save session state to disk (~/.machcode/sessions/<sessionId>.json)
+      try {
+        await saveSession({
+          sessionId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          workspaceDir: baseDir,
+          mode: activeMode,
+          history: sessionHistory,
+          addedFiles: Array.from(addedContextFiles),
+          tokenStats,
+          snapshots: fileSnapshots,
+        });
+      } catch {
+        // ignore auto-save errors
+      }
 
       // Render interactive status bar after execution
       if (options.writeToStdout ?? true) {
@@ -1615,3 +1688,5 @@ export * from './ui/terminalInput.js';
 export * from './ui/theme.js';
 export * from './ui/statusBar.js';
 export * from './utils/mentionParser.js';
+export * from './engine/sessionManager.js';
+export * from './engine/contextSummarizer.js';

@@ -237,6 +237,10 @@ export const lsCommand: SlashCommand = {
   },
 };
 
+import { saveCommand, sessionsCommand, resumeCommand } from './session.js';
+
+export { saveCommand, sessionsCommand, resumeCommand } from './session.js';
+
 export const contextCommands: SlashCommand[] = [
   addCommand,
   dropCommand,
@@ -244,4 +248,7 @@ export const contextCommands: SlashCommand[] = [
   contextCommand,
   cdCommand,
   lsCommand,
+  saveCommand,
+  sessionsCommand,
+  resumeCommand,
 ];
