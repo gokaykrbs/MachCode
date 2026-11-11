@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import readline from 'node:readline';
 import type readlinePromises from 'node:readline/promises';
 import chalk from 'chalk';
@@ -7,13 +9,16 @@ export interface AutocompleteItem {
   prefix: string;
   displayCommand: string;
   description: string;
-  category: 'Command' | 'Skill';
+  category: 'Command' | 'Skill' | 'File';
 }
 
 /**
- * Builds the comprehensive list of slash commands and official NVIDIA skills for autocomplete.
+ * Builds the comprehensive list of slash commands, official NVIDIA skills, and workspace files for autocomplete.
  */
-export function buildAutocompleteItems(_registry?: CommandRegistry): AutocompleteItem[] {
+export function buildAutocompleteItems(
+  _registry?: CommandRegistry,
+  baseDir?: string,
+): AutocompleteItem[] {
   const items: AutocompleteItem[] = [];
   const seenPrefixes = new Set<string>();
 
@@ -119,6 +124,11 @@ export function buildAutocompleteItems(_registry?: CommandRegistry): Autocomplet
       displayCommand: '/run <cmd>',
       description: 'Execute shell command directly in workspace',
     },
+    { prefix: '/status', displayCommand: '/status', description: 'Show interactive session status card and bar' },
+    { prefix: '/theme', displayCommand: '/theme [name]', description: 'Switch terminal theme (tokyo-night, dracula, matrix, monokai)' },
+    { prefix: '/model', displayCommand: '/model [model-id|reset]', description: 'Pin queries to model or view racing pools' },
+    { prefix: '/mode', displayCommand: '/mode [plan|build|toggle]', description: 'Switch between Plan (read-only) and Build (full agent) modes' },
+    { prefix: '/build', displayCommand: '/build', description: 'Switch session directly to Build Mode' },
     { prefix: '/help', displayCommand: '/help', description: 'Print table of all slash commands' },
     { prefix: '/clear', displayCommand: '/clear', description: 'Clear the terminal screen' },
     { prefix: '/exit', displayCommand: '/exit', description: 'Gracefully exit the MachCode CLI' },
@@ -257,6 +267,45 @@ export function buildAutocompleteItems(_registry?: CommandRegistry): Autocomplet
     }
   }
 
+  // 3. Workspace files for @ mentions autocomplete (if baseDir specified)
+  if (baseDir) {
+    try {
+      const scanDir = (dir: string, depth = 0) => {
+        if (depth > 2) return;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (
+            entry.name.startsWith('.') ||
+            entry.name === 'node_modules' ||
+            entry.name === 'dist' ||
+            entry.name === '.pnpm-store'
+          ) {
+            continue;
+          }
+          const full = path.join(dir, entry.name);
+          const rel = path.relative(baseDir, full).replace(/\\/g, '/');
+          if (entry.isFile()) {
+            const prefix = `@${rel}`;
+            if (!seenPrefixes.has(prefix)) {
+              seenPrefixes.add(prefix);
+              items.push({
+                prefix,
+                displayCommand: prefix,
+                description: `Workspace file (${entry.name})`,
+                category: 'File',
+              });
+            }
+          } else if (entry.isDirectory()) {
+            scanDir(full, depth + 1);
+          }
+        }
+      };
+      scanDir(baseDir);
+    } catch {
+      // ignore
+    }
+  }
+
   return items;
 }
 
@@ -267,29 +316,41 @@ export function filterAutocompleteItems(
   buffer: string,
   allItems: AutocompleteItem[],
 ): AutocompleteItem[] {
-  if (!buffer.startsWith('/')) {
-    return [];
+  if (buffer.startsWith('/')) {
+    const query = buffer.slice(1).trim().toLowerCase();
+    if (query.length === 0) {
+      // Return all command/skill items when user typed "/"
+      return allItems.filter((i) => i.prefix.startsWith('/'));
+    }
+
+    return allItems.filter((item) => {
+      if (item.category === 'File') return false;
+      const itemPrefix = item.prefix.toLowerCase();
+      const itemDisplay = item.displayCommand.toLowerCase();
+      const itemDesc = item.description.toLowerCase();
+      const queryNoSlash = query.startsWith('/') ? query.slice(1) : query;
+
+      return (
+        itemPrefix.includes(query) ||
+        itemDisplay.includes(query) ||
+        itemDesc.includes(query) ||
+        itemPrefix.replace(/[^a-z0-9]/g, '').includes(queryNoSlash)
+      );
+    });
   }
 
-  const query = buffer.slice(1).trim().toLowerCase();
-  if (query.length === 0) {
-    // Return all items when user just typed "/"
-    return allItems;
+  // Check for @file mention trigger
+  const mentionMatch = /(?:^|\s)@([a-zA-Z0-9_\-./\\]*)$/.exec(buffer);
+  if (mentionMatch) {
+    const query = mentionMatch[1].toLowerCase();
+    return allItems.filter((item) => {
+      if (item.category !== 'File') return false;
+      const cleanPrefix = item.prefix.replace(/^@/, '').toLowerCase();
+      return query === '' || cleanPrefix.includes(query);
+    });
   }
 
-  return allItems.filter((item) => {
-    const itemPrefix = item.prefix.toLowerCase();
-    const itemDisplay = item.displayCommand.toLowerCase();
-    const itemDesc = item.description.toLowerCase();
-    const queryNoSlash = query.startsWith('/') ? query.slice(1) : query;
-
-    return (
-      itemPrefix.includes(query) ||
-      itemDisplay.includes(query) ||
-      itemDesc.includes(query) ||
-      itemPrefix.replace(/[^a-z0-9]/g, '').includes(queryNoSlash)
-    );
-  });
+  return [];
 }
 
 export interface PromptWithSuggestionsOptions {
@@ -365,7 +426,9 @@ export async function promptWithSuggestions(
       stdout.write(`\r\x1b[2K${currentPromptText}${buffer}`);
 
       const filtered =
-        !isDismissed && buffer.startsWith('/') ? filterAutocompleteItems(buffer, allItems) : [];
+        !isDismissed && (buffer.startsWith('/') || buffer.includes('@'))
+          ? filterAutocompleteItems(buffer, allItems)
+          : [];
 
       if (filtered.length > 0) {
         if (selectedIndex >= filtered.length) {
@@ -384,8 +447,11 @@ export async function promptWithSuggestions(
         const lines: string[] = [];
         const matchCountText =
           filtered.length !== allItems.length ? ` (${filtered.length} matches)` : '';
-        const headerTitle = ` Commands & Loaded Skills${matchCountText} `;
-        const borderCyan = chalk.cyan;
+        const isFileMode = filtered.some((f) => f.category === 'File');
+        const headerTitle = isFileMode
+          ? ` Mention Workspace File${matchCountText} `
+          : ` Commands & Loaded Skills${matchCountText} `;
+        const borderCyan = isFileMode ? chalk.magenta : chalk.cyan;
 
         // Top border
         const topFillLen = Math.max(0, cardWidth - headerTitle.length - 4);
@@ -397,11 +463,13 @@ export async function promptWithSuggestions(
           const isSelected = globalIdx === selectedIndex;
 
           const pointer = isSelected ? chalk.cyan.bold(' ❯ ') : '   ';
-          const cmdColor = isSelected ? chalk.white.bold : chalk.cyan;
+          const cmdColor = isSelected ? chalk.white.bold : item.category === 'File' ? chalk.magenta : chalk.cyan;
           const catBadge =
             item.category === 'Skill'
               ? chalk.bgGreen.black.bold(' SKILL ')
-              : chalk.bgBlue.black.bold(' CMD ');
+              : item.category === 'File'
+                ? chalk.bgMagenta.black.bold(' FILE ')
+                : chalk.bgBlue.black.bold(' CMD ');
 
           const cmdPadded = item.displayCommand.padEnd(26, ' ');
           const descLen = Math.max(10, cardWidth - 36);
@@ -462,7 +530,9 @@ export async function promptWithSuggestions(
       // Handle Enter / Return
       if (key.name === 'return' || key.name === 'enter') {
         const filtered =
-          !isDismissed && buffer.startsWith('/') ? filterAutocompleteItems(buffer, allItems) : [];
+          !isDismissed && (buffer.startsWith('/') || buffer.includes('@'))
+            ? filterAutocompleteItems(buffer, allItems)
+            : [];
 
         // If user typed exact "/" and hit Enter with an item selected, autocomplete and submit
         if (buffer === '/' && filtered.length > 0 && filtered[selectedIndex]) {
@@ -478,11 +548,20 @@ export async function promptWithSuggestions(
       // Handle Tab (autocomplete selected item into buffer, or toggle mode when buffer is empty)
       if (key.name === 'tab') {
         const filtered =
-          !isDismissed && buffer.startsWith('/') ? filterAutocompleteItems(buffer, allItems) : [];
+          !isDismissed && (buffer.startsWith('/') || buffer.includes('@'))
+            ? filterAutocompleteItems(buffer, allItems)
+            : [];
 
         if (filtered.length > 0 && filtered[selectedIndex]) {
           const item = filtered[selectedIndex];
-          buffer = `${item.prefix} `;
+          if (item.category === 'File') {
+            buffer = buffer.replace(/(?:^|\s)@([a-zA-Z0-9_\-./\\]*)$/, (m) => {
+              const leadingSpace = m.startsWith(' ') ? ' ' : '';
+              return `${leadingSpace}${item.prefix} `;
+            });
+          } else {
+            buffer = `${item.prefix} `;
+          }
           cursor = buffer.length;
           selectedIndex = 0;
           scrollOffset = 0;
@@ -510,7 +589,9 @@ export async function promptWithSuggestions(
       // Handle Up Arrow
       if (key.name === 'up') {
         const filtered =
-          !isDismissed && buffer.startsWith('/') ? filterAutocompleteItems(buffer, allItems) : [];
+          !isDismissed && (buffer.startsWith('/') || buffer.includes('@'))
+            ? filterAutocompleteItems(buffer, allItems)
+            : [];
 
         if (filtered.length > 0) {
           selectedIndex = (selectedIndex - 1 + filtered.length) % filtered.length;
@@ -531,7 +612,9 @@ export async function promptWithSuggestions(
       // Handle Down Arrow
       if (key.name === 'down') {
         const filtered =
-          !isDismissed && buffer.startsWith('/') ? filterAutocompleteItems(buffer, allItems) : [];
+          !isDismissed && (buffer.startsWith('/') || buffer.includes('@'))
+            ? filterAutocompleteItems(buffer, allItems)
+            : [];
 
         if (filtered.length > 0) {
           selectedIndex = (selectedIndex + 1) % filtered.length;

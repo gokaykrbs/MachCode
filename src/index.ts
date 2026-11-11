@@ -37,6 +37,9 @@ import {
   type TokenStats,
 } from './commands/index.js';
 import { buildAutocompleteItems, promptWithSuggestions } from './ui/autocomplete.js';
+import { loadSavedTheme, getActiveTheme } from './ui/theme.js';
+import { renderStatusBar, getGitBranch } from './ui/statusBar.js';
+import { parseAndExpandMentions } from './utils/mentionParser.js';
 
 export interface SessionMessage {
   role: 'user' | 'assistant';
@@ -1168,6 +1171,8 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
 
   const handoffWindowMs = options.handoffWindowMs ?? DEFAULT_HANDOFF_WINDOW_MS;
   const sessionId = `mc_${Math.random().toString(36).substring(2, 10)}`;
+  // Load saved theme preference
+  await loadSavedTheme();
   // Interactive terminal sessions default to Ask-Before-Write (autoApprove: false) unless overridden
   const initialAutoApprove = options.autoApprove ?? !(options.writeToStdout ?? true);
   let activeMode: 'build' | 'plan' = options.initialMode ?? 'build';
@@ -1216,6 +1221,28 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   ): Promise<MachCodeRunResult> => {
     rl?.pause?.();
     try {
+      // Parse and expand @file mentions in prompt
+      const mentionResult = await parseAndExpandMentions(prompt, baseDir);
+      if (mentionResult.mentionedFiles.length > 0) {
+        for (const mf of mentionResult.mentionedFiles) {
+          addedContextFiles.add(mf.relativePath);
+          if (options.writeToStdout ?? true) {
+            console.log(chalk.cyan(`  📎 [Included @${mf.relativePath} (${mf.lineCount} lines)]`));
+          }
+        }
+      }
+      const effectivePrompt = prompt + mentionResult.augmentedContext;
+
+      const effectiveStrongPool = commandContext.pinnedModel
+        ? [commandContext.pinnedModel]
+        : (runOpts?.strongPool ?? commandContext.strongPool ?? strongPool);
+      const effectiveWeakPool = commandContext.pinnedModel
+        ? [commandContext.pinnedModel]
+        : (runOpts?.weakPool ?? commandContext.weakPool ?? weakPool);
+      const effectiveHandoff = commandContext.pinnedModel
+        ? 0
+        : (runOpts?.handoffWindowMs ?? handoffWindowMs);
+
       const mergedOptions: MachCodeRunOptions = {
         ...options,
         ...runOpts,
@@ -1223,9 +1250,9 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         baseDir,
         lightModel: runOpts?.lightModel ?? commandContext.lightModel ?? lightModel,
         heavyModel: runOpts?.heavyModel ?? commandContext.heavyModel ?? heavyModel,
-        strongPool: runOpts?.strongPool ?? commandContext.strongPool ?? strongPool,
-        weakPool: runOpts?.weakPool ?? commandContext.weakPool ?? weakPool,
-        handoffWindowMs: runOpts?.handoffWindowMs ?? handoffWindowMs,
+        strongPool: effectiveStrongPool,
+        weakPool: effectiveWeakPool,
+        handoffWindowMs: effectiveHandoff,
         history: sessionHistory,
         addedFiles: addedContextFiles,
         autoApprove: runOpts?.autoApprove ?? commandContext.autoApprove,
@@ -1287,7 +1314,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         },
       };
 
-      const result = await runMachCode(prompt, mergedOptions);
+      const result = await runMachCode(effectivePrompt, mergedOptions);
 
       // Update session tokens & history
       const promptTokens = Math.ceil(prompt.length / 4);
@@ -1305,6 +1332,24 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           ? `Modified files: ${result.executionSummary.modifiedFiles.map((f) => f.relativePath).join(', ')}`
           : 'Task completed.');
       sessionHistory.push({ role: 'assistant', content: assistantOutput });
+
+      // Render interactive status bar after execution
+      if (options.writeToStdout ?? true) {
+        const totalTokens = tokenStats.estimatedPromptTokens + tokenStats.estimatedCompletionTokens;
+        const branch = getGitBranch(baseDir);
+        const sb = renderStatusBar({
+          mode: activeMode,
+          baseDir,
+          strongPoolCount: commandContext.pinnedModel ? 1 : (commandContext.strongPool?.length ?? strongPool.length),
+          activeModel: commandContext.pinnedModel ?? commandContext.heavyModel,
+          isPinned: Boolean(commandContext.pinnedModel),
+          gitBranch: branch ?? undefined,
+          totalTokens,
+          autoApprove: commandContext.autoApprove,
+          sessionId,
+        });
+        console.log(`\n${sb}\n`);
+      }
 
       return result;
     } finally {
@@ -1344,6 +1389,13 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       activeAutoApprove = Boolean(val);
     },
     permissionManager,
+    pinnedModel: undefined,
+    setPinnedModel(m) {
+      commandContext.pinnedModel = m;
+    },
+    get activeTheme() {
+      return getActiveTheme().name;
+    },
     runMachCode: executeInstruction,
   };
 
@@ -1464,12 +1516,12 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     }
   }
 
-  // Interactive REPL prompt loop: exact format `[machcode✨] > ` (or `[machcode✨ (plan)] > ` in plan mode)
-  const getPromptLabel = () =>
-    activeMode === 'plan'
-      ? `${chalk.cyan.bold('[machcode✨')} ${chalk.magenta('(plan)')}${chalk.cyan.bold(']')} ${chalk.yellow('>')} `
-      : `${chalk.cyan.bold('[machcode✨]')} ${chalk.yellow('>')} `;
-  const autocompleteItems = buildAutocompleteItems(commandRegistry);
+  // Interactive REPL prompt loop: styled using active theme and mode
+  const getPromptLabel = () => {
+    const theme = getActiveTheme();
+    return theme.formatPrompt(activeMode);
+  };
+  const autocompleteItems = buildAutocompleteItems(commandRegistry, baseDir);
   const promptHistory: string[] = [];
 
   while (!commandContext.shouldExit) {
@@ -1483,6 +1535,12 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           rlFallback: rl,
           onTabToggleMode: () => {
             activeMode = activeMode === 'plan' ? 'build' : 'plan';
+            const theme = getActiveTheme();
+            const label =
+              activeMode === 'plan'
+                ? theme.planMode('[PLAN MODE]')
+                : theme.buildMode('[BUILD MODE]');
+            process.stdout.write(`\n  ${label} ${chalk.dim('Toggled via Tab')}\n`);
           },
         });
       } else {
@@ -1554,3 +1612,6 @@ export * from './tools/nvidiaSkills.js';
 export * from './commands/index.js';
 export * from './ui/autocomplete.js';
 export * from './ui/terminalInput.js';
+export * from './ui/theme.js';
+export * from './ui/statusBar.js';
+export * from './utils/mentionParser.js';

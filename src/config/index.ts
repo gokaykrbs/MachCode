@@ -11,6 +11,7 @@ export interface MachCodeConfig {
   heavyModel: string;
   strongPool?: string[];
   weakPool?: string[];
+  theme?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,6 +77,7 @@ export async function loadConfig(): Promise<MachCodeConfig | null> {
     heavyModel: parsed?.heavyModel ?? '',
     strongPool: Array.isArray(parsed?.strongPool) ? parsed.strongPool : undefined,
     weakPool: Array.isArray(parsed?.weakPool) ? parsed.weakPool : undefined,
+    theme: parsed?.theme,
     createdAt: parsed?.createdAt ?? new Date().toISOString(),
     updatedAt: parsed?.updatedAt ?? new Date().toISOString(),
   };
@@ -90,6 +92,7 @@ export async function saveConfig(
   heavyModel?: string,
   strongPool?: string[],
   weakPool?: string[],
+  theme?: string,
 ): Promise<MachCodeConfig> {
   const configDir = getConfigDir();
   const configPath = getConfigPath();
@@ -102,6 +105,7 @@ export async function saveConfig(
     heavyModel: (heavyModel ?? existing?.heavyModel ?? '').trim(),
     strongPool: strongPool ?? existing?.strongPool,
     weakPool: weakPool ?? existing?.weakPool,
+    theme: theme ?? existing?.theme,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };

@@ -320,8 +320,19 @@ export const exitCommand: SlashCommand = {
   },
 };
 
+import { themeCommand } from './theme.js';
+import { modelCommand } from './models.js';
+import { statusCommand } from './status.js';
+
+export { themeCommand } from './theme.js';
+export { modelCommand } from './models.js';
+export { statusCommand } from './status.js';
+
 export const systemCommands: SlashCommand[] = [
   helpCommand,
+  statusCommand,
+  themeCommand,
+  modelCommand,
   tokensCommand,
   runCommand,
   configCommand,

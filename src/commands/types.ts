@@ -36,6 +36,9 @@ export interface CommandContext {
   permissionManager?: PermissionManager;
   mode?: 'build' | 'plan';
   setMode?: (mode: 'build' | 'plan') => void;
+  pinnedModel?: string;
+  setPinnedModel?: (model: string | undefined) => void;
+  activeTheme?: string;
   runMachCode: (prompt: string, options?: MachCodeRunOptions) => Promise<MachCodeRunResult>;
 }
 
