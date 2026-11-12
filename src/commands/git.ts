@@ -16,22 +16,79 @@ async function runGit(args: string[], cwd: string): Promise<{ stdout: string; st
 
 export const undoCommand: SlashCommand = {
   name: 'undo',
-  description: 'Revert the last file modification made by the AI',
+  description: 'Revert file modifications made by the AI (single file, specific path, or all)',
   category: 'Safety & Git',
-  usage: '/undo',
+  usage: '/undo [file|all]',
   aliases: ['revert'],
-  execute: async (_args: string, context: CommandContext) => {
+  execute: async (args: string, context: CommandContext) => {
     if (context.fileSnapshots.length === 0) {
       console.log(chalk.yellow('ℹ No AI file modifications in history to undo.'));
       return;
     }
 
+    const trimmed = args.trim();
+
+    // Revert all files
+    if (trimmed.toLowerCase() === 'all') {
+      let count = 0;
+      while (context.fileSnapshots.length > 0) {
+        const snap = context.fileSnapshots.pop()!;
+        const targetPath = path.resolve(context.baseDir, snap.file);
+        try {
+          if (snap.previousContent === '__FILE_DID_NOT_EXIST__') {
+            await fs.rm(targetPath, { force: true });
+          } else {
+            await fs.mkdir(path.dirname(targetPath), { recursive: true });
+            await fs.writeFile(targetPath, snap.previousContent, 'utf-8');
+          }
+          count++;
+        } catch (err) {
+          console.error(chalk.red(`✖ Failed to revert ${snap.file}: ${String(err)}`));
+        }
+      }
+      console.log(chalk.green.bold(`✔ Reverted all ${count} modified file(s) in session history.`));
+      return;
+    }
+
+    // Revert specific file
+    if (trimmed.length > 0) {
+      const norm = path.normalize(trimmed).toLowerCase();
+      const matchIdx = context.fileSnapshots.findIndex(
+        (s) => path.normalize(s.file).toLowerCase() === norm,
+      );
+      if (matchIdx === -1) {
+        console.log(chalk.yellow(`ℹ No modification history found for file: ${trimmed}`));
+        return;
+      }
+      const [snap] = context.fileSnapshots.splice(matchIdx, 1);
+      const targetPath = path.resolve(context.baseDir, snap.file);
+      try {
+        if (snap.previousContent === '__FILE_DID_NOT_EXIST__') {
+          await fs.rm(targetPath, { force: true });
+          console.log(
+            chalk.green(`✔ Undone file creation: removed `) + chalk.white.bold(snap.file),
+          );
+        } else {
+          await fs.mkdir(path.dirname(targetPath), { recursive: true });
+          await fs.writeFile(targetPath, snap.previousContent, 'utf-8');
+          console.log(
+            chalk.green(`✔ Reverted `) +
+              chalk.white.bold(snap.file) +
+              chalk.green(` to state before last AI modification.`),
+          );
+        }
+      } catch (err) {
+        console.error(chalk.red(`✖ Failed to revert ${snap.file}: ${String(err)}`));
+      }
+      return;
+    }
+
+    // Revert last modified file
     const lastSnapshot = context.fileSnapshots.pop()!;
     const targetPath = path.resolve(context.baseDir, lastSnapshot.file);
 
     try {
       if (lastSnapshot.previousContent === '__FILE_DID_NOT_EXIST__') {
-        // File was newly created by the AI; remove it to undo
         await fs.rm(targetPath, { force: true });
         console.log(
           chalk.green(`✔ Undone file creation: removed `) + chalk.white.bold(lastSnapshot.file),
@@ -47,6 +104,59 @@ export const undoCommand: SlashCommand = {
       }
     } catch (err) {
       console.error(chalk.red(`✖ Failed to revert ${lastSnapshot.file}: ${String(err)}`));
+    }
+  },
+};
+
+export const snapshotsCommand: SlashCommand = {
+  name: 'snapshots',
+  description: 'List in-memory file modification snapshots available to undo',
+  category: 'Safety & Git',
+  usage: '/snapshots',
+  aliases: ['snaps', 'history'],
+  execute: async (_args: string, context: CommandContext) => {
+    if (context.fileSnapshots.length === 0) {
+      console.log(chalk.dim('\nNo file snapshots recorded in this session yet.\n'));
+      return;
+    }
+
+    console.log(chalk.cyan.bold('\n══ Recorded File Snapshots (Undo History) ══'));
+    context.fileSnapshots.forEach((snap, idx) => {
+      const num = `#${idx + 1}`.padStart(3, ' ');
+      const timeStr = new Date(snap.timestamp).toLocaleTimeString();
+      const action =
+        snap.previousContent === '__FILE_DID_NOT_EXIST__'
+          ? chalk.green('[created]')
+          : chalk.yellow('[modified]');
+      console.log(
+        `  ${chalk.dim(num)} ${action} ${chalk.white.bold(snap.file)} ${chalk.dim(`(${timeStr})`)}`,
+      );
+    });
+    console.log(
+      chalk.dim('\nTip: Type /undo to revert last, or /undo <filename>, or /undo all.\n'),
+    );
+  },
+};
+
+export const branchCommand: SlashCommand = {
+  name: 'branch',
+  description: 'Display current git branch and list repository branches',
+  category: 'Safety & Git',
+  usage: '/branch [branch-name]',
+  aliases: ['branches'],
+  execute: async (args: string, context: CommandContext) => {
+    const targetBranch = args.trim();
+    try {
+      if (targetBranch) {
+        const { stdout } = await runGit(['checkout', targetBranch], context.baseDir);
+        console.log(chalk.green(`✔ Switched branch: `) + stdout.trim());
+      } else {
+        const { stdout } = await runGit(['branch', '-a'], context.baseDir);
+        console.log(chalk.cyan.bold('\nGit Branches:'));
+        console.log(stdout.trim() + '\n');
+      }
+    } catch (err) {
+      console.log(chalk.yellow(`ℹ Git branch operation failed: ${String(err)}`));
     }
   },
 };
@@ -204,6 +314,8 @@ export const approveCommand: SlashCommand = {
 export const gitCommands: SlashCommand[] = [
   approveCommand,
   undoCommand,
+  snapshotsCommand,
+  branchCommand,
   diffCommand,
   commitCommand,
 ];
