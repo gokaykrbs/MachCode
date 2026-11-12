@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import chalk from 'chalk';
 import type { SlashCommand, CommandContext } from './types.js';
+import { fastSearchCode } from '../tools/fastSearch.js';
 
 export const addCommand: SlashCommand = {
   name: 'add',
@@ -237,6 +238,73 @@ export const lsCommand: SlashCommand = {
   },
 };
 
+export const searchCommand: SlashCommand = {
+  name: 'search',
+  description: 'Fast multi-file text and regex code search across workspace',
+  category: 'Context & Memory',
+  usage: '/search <query> [--regex] [--case]',
+  aliases: ['grep', 'find'],
+  execute: async (args: string, context: CommandContext) => {
+    const raw = args.trim();
+    if (!raw) {
+      console.log(chalk.yellow('Usage: /search <query> [--regex] [--case]'));
+      return;
+    }
+
+    const isRegex = raw.includes('--regex');
+    const isCase = raw.includes('--case');
+    const query = raw
+      .replace(/--regex/g, '')
+      .replace(/--case/g, '')
+      .trim();
+
+    if (!query) {
+      console.log(chalk.yellow('Usage: /search <query> [--regex] [--case]'));
+      return;
+    }
+
+    console.log(chalk.cyan(`\n🔍 Searching workspace for "${chalk.white.bold(query)}"...`));
+    const result = await fastSearchCode({
+      query,
+      baseDir: context.baseDir,
+      isRegex,
+      caseSensitive: isCase,
+      contextLinesBefore: 1,
+      contextLinesAfter: 1,
+      maxMatches: 50,
+    });
+
+    if (result.matches.length === 0) {
+      console.log(
+        chalk.dim(
+          `No matches found in ${result.totalFilesSearched} file(s) (${result.durationMs}ms).\n`,
+        ),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.green(
+        `Found ${result.matches.length}${result.truncated ? '+' : ''} matches across ${result.totalFilesSearched} file(s) (${result.durationMs}ms):\n`,
+      ),
+    );
+
+    for (const match of result.matches.slice(0, 30)) {
+      console.log(
+        chalk.cyan(`${match.displayPath}`) +
+          chalk.gray(`:`) +
+          chalk.yellow(`${match.lineNumber}`) +
+          chalk.gray(` │ `) +
+          match.lineText.trim(),
+      );
+    }
+    if (result.matches.length > 30) {
+      console.log(chalk.dim(`\n  ... (+${result.matches.length - 30} more matches omitted)`));
+    }
+    console.log('');
+  },
+};
+
 import { saveCommand, sessionsCommand, resumeCommand } from './session.js';
 
 export { saveCommand, sessionsCommand, resumeCommand } from './session.js';
@@ -248,6 +316,7 @@ export const contextCommands: SlashCommand[] = [
   contextCommand,
   cdCommand,
   lsCommand,
+  searchCommand,
   saveCommand,
   sessionsCommand,
   resumeCommand,
