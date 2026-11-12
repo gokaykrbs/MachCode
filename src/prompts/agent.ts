@@ -56,6 +56,12 @@ export interface AgentPromptOptions {
   readOnly?: boolean;
   /** Tools are unavailable for the winning model: fall back to file-header code blocks. */
   toolsUnavailable?: boolean;
+  /** Active specialized subagent persona (e.g. @architect, @coder, @tester, @reviewer, @nvidia). */
+  subagent?: {
+    name: string;
+    mention: string;
+    systemPrompt: string;
+  };
 }
 
 /**
@@ -68,6 +74,12 @@ export function buildAgentSystemPrompt(options: AgentPromptOptions): string {
   const now = new Date();
 
   const sections: string[] = [];
+
+  if (options.subagent) {
+    sections.push(
+      `# ACTIVE SPECIALIZED SUBAGENT: ${options.subagent.name} (${options.subagent.mention})\n${options.subagent.systemPrompt}`,
+    );
+  }
 
   sections.push(`You are MachCode, an interactive AI coding agent running in the user's terminal on their own computer.
 You help with software engineering tasks: exploring projects, answering questions about code, fixing bugs, adding features, refactoring, running builds and tests.

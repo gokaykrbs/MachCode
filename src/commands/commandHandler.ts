@@ -56,6 +56,7 @@ export class CommandRegistry {
       'Execution & Modes': [],
       'Safety & Git': [],
       System: [],
+      Subagents: [],
     };
 
     for (const cmd of this.commands.values()) {

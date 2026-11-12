@@ -59,11 +59,18 @@ export function validate(token: string): boolean {
 \`\`\``;
 
 /**
- * Builds the Sniper system prompt, optionally appending workspace or file context rules.
+ * Builds the Sniper system prompt, optionally prepending subagent persona and appending workspace context.
  */
-export function buildSniperSystemPrompt(additionalContext?: string): string {
-  if (!additionalContext || additionalContext.trim().length === 0) {
-    return SNIPER_SYSTEM_PROMPT;
+export function buildSniperSystemPrompt(
+  additionalContext?: string,
+  subagent?: { name: string; mention: string; systemPrompt: string },
+): string {
+  let prompt = SNIPER_SYSTEM_PROMPT;
+  if (subagent) {
+    prompt = `# ACTIVE SPECIALIZED SUBAGENT: ${subagent.name} (${subagent.mention})\n${subagent.systemPrompt}\n\n${prompt}`;
   }
-  return `${SNIPER_SYSTEM_PROMPT}\n\n# WORKSPACE CONTEXT\n${additionalContext.trim()}`;
+  if (!additionalContext || additionalContext.trim().length === 0) {
+    return prompt;
+  }
+  return `${prompt}\n\n# WORKSPACE CONTEXT\n${additionalContext.trim()}`;
 }

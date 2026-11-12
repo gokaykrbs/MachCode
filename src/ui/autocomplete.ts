@@ -9,7 +9,7 @@ export interface AutocompleteItem {
   prefix: string;
   displayCommand: string;
   description: string;
-  category: 'Command' | 'Skill' | 'File';
+  category: 'Command' | 'Skill' | 'File' | 'Subagent';
 }
 
 /**
@@ -143,6 +143,11 @@ export function buildAutocompleteItems(
       prefix: '/mode',
       displayCommand: '/mode [plan|build|toggle]',
       description: 'Switch between Plan (read-only) and Build (full agent) modes',
+    },
+    {
+      prefix: '/agent',
+      displayCommand: '/agent [architect|coder|tester|reviewer|nvidia|reset]',
+      description: 'Switch or inspect specialized NVIDIA NIM subagents',
     },
     {
       prefix: '/build',
@@ -287,7 +292,43 @@ export function buildAutocompleteItems(
     }
   }
 
-  // 3. Workspace files for @ mentions autocomplete (if baseDir specified)
+  // 3. Specialized NVIDIA NIM Subagents for @ mentions
+  const subagentItems: Array<{ prefix: string; description: string }> = [
+    {
+      prefix: '@architect',
+      description: 'Subagent: System architecture, RFCs, modularity & schemas',
+    },
+    {
+      prefix: '@coder',
+      description: 'Subagent: Surgical code implementation, diff generation & bug fixing',
+    },
+    {
+      prefix: '@tester',
+      description: 'Subagent: Automated test suite engineering & edge-case coverage',
+    },
+    {
+      prefix: '@reviewer',
+      description: 'Subagent: Security auditing, performance bottlenecks & code quality',
+    },
+    {
+      prefix: '@nvidia',
+      description: 'Subagent: NVIDIA GPU acceleration, CUDA C++, TensorRT & cuDF',
+    },
+  ];
+
+  for (const sa of subagentItems) {
+    if (!seenPrefixes.has(sa.prefix)) {
+      seenPrefixes.add(sa.prefix);
+      items.push({
+        prefix: sa.prefix,
+        displayCommand: sa.prefix,
+        description: sa.description,
+        category: 'Subagent',
+      });
+    }
+  }
+
+  // 4. Workspace files for @ mentions autocomplete (if baseDir specified)
   if (baseDir) {
     try {
       const scanDir = (dir: string, depth = 0) => {
@@ -359,12 +400,12 @@ export function filterAutocompleteItems(
     });
   }
 
-  // Check for @file mention trigger
+  // Check for @ mention trigger (files and subagents)
   const mentionMatch = /(?:^|\s)@([a-zA-Z0-9_\-./\\]*)$/.exec(buffer);
   if (mentionMatch) {
     const query = mentionMatch[1].toLowerCase();
     return allItems.filter((item) => {
-      if (item.category !== 'File') return false;
+      if (item.category !== 'File' && item.category !== 'Subagent') return false;
       const cleanPrefix = item.prefix.replace(/^@/, '').toLowerCase();
       return query === '' || cleanPrefix.includes(query);
     });

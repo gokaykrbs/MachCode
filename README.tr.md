@@ -80,6 +80,20 @@ Terminal arayüzünde 28'den fazla güçlü slash komutu mevcuttur:
 
 ---
 
+## 🤖 Özelleştirilmiş NVIDIA NIM Alt Ajanları (Subagents)
+
+MachCode, yalnızca NVIDIA NIM modelleriyle çalışan 5 özelleştirilmiş alt ajan sunar. İstemlerinizde `@<ad>` yazarak doğrudan çağırabilir veya `/agent <ad>` komutuyla oturum boyunca sabitleyebilirsiniz:
+
+| Alt Ajan | Çağrı (@) | Varsayılan Mod | Tercih Edilen NIM Modelleri | Rol ve Yetenekler |
+| :--- | :--- | :---: | :--- | :--- |
+| **Architect** | `@architect` | `PLAN` | DeepSeek R1, Llama 3.1 405B, Nemotron 70B | Üst düzey sistem mimarisi, RFC yazımı, veritabanı şemaları, modüler sınırlar ve mimari diyagramlar. |
+| **Coder** | `@coder` | `BUILD` | Qwen 2.5 Coder 32B, DeepSeek-Coder, Llama 3.3 70B | Cerrahi kod yazımı, temiz git diff üretimi, hata düzeltme ve sıfır sohbet (zero-chatter). |
+| **Tester** | `@tester` | `BUILD` | Qwen 2.5 Coder, Mixtral 8x22B, Llama 3.3 70B | Otomatik birim ve entegrasyon testleri, sınır testleri, mock doğrulama ve regresyon testleri. |
+| **Reviewer** | `@reviewer` | `PLAN` | DeepSeek R1, Llama 3.1 405B, Nemotron 70B | Sıkı kod kalite kapısı, güvenlik denetimi (OWASP), bellek sızıntısı tespiti ve performans incelemesi. |
+| **NVIDIA Specialist** | `@nvidia` | `BUILD` | DeepSeek R1, Llama 3.1 405B, Nemotron 70B | NVIDIA GPU hızlandırma uzmanı (CUDA C++, TensorRT-LLM, cuDF, cuOpt, Triton, DALI, DeepStream). |
+
+---
+
 ## 🔒 Güvenlik & İzin Sistemi
 
 MachCode, **Claude Code** ve **Antigravity** izin modelini benimser:

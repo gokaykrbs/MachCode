@@ -16,6 +16,7 @@ export interface StatusBarInfo {
   autoApprove?: boolean;
   themeName?: string;
   sessionId?: string;
+  subagentName?: string;
 }
 
 /**
@@ -104,6 +105,9 @@ export function renderStatusBar(
   const modeBadge =
     info.mode === 'plan' ? theme.planMode(`[${modeText}]`) : theme.buildMode(`[${modeText}]`);
 
+  // Subagent Badge (if active)
+  const subagentBadge = info.subagentName ? theme.secondary(`🤖 @${info.subagentName}`) : null;
+
   // 2. Model / Racing Engine Badge
   let modelBadge = '';
   if (info.isPinned && info.activeModel) {
@@ -140,6 +144,7 @@ export function renderStatusBar(
   const sep = theme.muted(' │ ');
   const rawSegments = [
     modeBadge,
+    ...(subagentBadge ? [subagentBadge] : []),
     modelBadge,
     dirBadge,
     gitBadge,
@@ -180,6 +185,11 @@ export function printStatusCard(info: StatusBarInfo): void {
         : theme.buildMode('BUILD MODE (Full Agent, file editing & shell execution enabled)')
     }`,
   );
+  if (info.subagentName) {
+    console.log(
+      `  ${chalk.bold('Active Subagent:')}    ${theme.secondary(`🤖 @${info.subagentName}`)}`,
+    );
+  }
   console.log(`  ${chalk.bold('Workspace Path:')}     ${chalk.white(path.resolve(info.baseDir))}`);
   console.log(
     `  ${chalk.bold('Git Branch:')}         ${branch ? theme.secondary(`🌿 ${branch}`) : chalk.gray('None (Not a git repository)')}`,

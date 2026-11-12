@@ -24,6 +24,7 @@ export const statusCommand: SlashCommand = {
       autoApprove: context.autoApprove,
       themeName: getActiveTheme().name,
       sessionId: context.sessionId,
+      subagentName: context.activeSubagent?.id,
     });
 
     const singleLine = renderStatusBar({
@@ -37,6 +38,7 @@ export const statusCommand: SlashCommand = {
       autoApprove: context.autoApprove,
       themeName: getActiveTheme().name,
       sessionId: context.sessionId,
+      subagentName: context.activeSubagent?.id,
     });
 
     console.log(`Live Status Bar Preview:\n  ${singleLine}\n`);

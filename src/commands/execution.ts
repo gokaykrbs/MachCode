@@ -263,19 +263,19 @@ ${fileContent}
   },
 };
 
-export const agentCommand: SlashCommand = {
-  name: 'agent',
-  description: 'Run in autonomous multi-step agent mode with tool calling across all drives',
+export const loopCommand: SlashCommand = {
+  name: 'loop',
+  description: 'Run in autonomous multi-step loop mode with tool calling across all drives',
   category: 'Execution & Modes',
-  usage: '/agent <task description>',
-  aliases: ['auto', 'loop'],
+  usage: '/loop <task description>',
+  aliases: ['auto'],
   execute: async (args: string, context: CommandContext) => {
     if (!args || args.trim().length === 0) {
-      console.log(chalk.yellow('Usage: /agent <task description>'));
+      console.log(chalk.yellow('Usage: /loop <task description>'));
       return;
     }
 
-    console.log(chalk.cyan.bold('\n🤖 Starting Autonomous Agent Mode...\n'));
+    console.log(chalk.cyan.bold('\n🤖 Starting Autonomous Loop Mode...\n'));
 
     await context.runMachCode(args.trim(), {
       baseDir: context.baseDir,
@@ -294,5 +294,5 @@ export const executionCommands: SlashCommand[] = [
   heavyCommand,
   fastCommand,
   reviewCommand,
-  agentCommand,
+  loopCommand,
 ];

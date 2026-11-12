@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/gokaykrbs/MachCode/releases"><img src="https://img.shields.io/badge/version-v0.1.0-blue.svg?style=flat-square" alt="version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
-  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-97%2F97%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-104%2F104%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.6-blue.svg?style=flat-square&logo=typescript" alt="TypeScript" /></a>
   <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-57%2B%20Models%20Racing-76B900.svg?style=flat-square&logo=nvidia" alt="NVIDIA NIM" /></a>
   <a href="#"><img src="https://img.shields.io/badge/REPL-Interactive%20Q%26A%20%2B%20Code-cyan.svg?style=flat-square" alt="REPL Mode" /></a>
@@ -167,7 +167,30 @@ mach --theme tokyo-night
 
 ---
 
-## 📖 Command Reference (28 Slash Commands)
+## 🤖 Specialized NVIDIA NIM Subagents
+
+MachCode features 5 built-in specialized subagents natively bound to the NVIDIA NIM catalog. Invoke them anytime using `@<name>` mentions in your prompt or switch to them persistently with `/agent <name>`:
+
+| Subagent | Mention | Default Mode | Preferred NIM Models | Role & Capabilities |
+| :--- | :--- | :---: | :--- | :--- |
+| **Architect** | `@architect` | `PLAN` | DeepSeek R1, Llama 3.1 405B, Nemotron 70B | High-level system design, RFC authoring, database schemas, modular boundaries, and architectural diagrams. |
+| **Coder** | `@coder` | `BUILD` | Qwen 2.5 Coder 32B, DeepSeek-Coder, Llama 3.3 70B | Surgical code implementation, precise git diff generation, bug fixes, zero-chatter code generation. |
+| **Tester** | `@tester` | `BUILD` | Qwen 2.5 Coder, Mixtral 8x22B, Llama 3.3 70B | Unit & integration test generation, boundary fuzzing, mock assertions, and regression coverage. |
+| **Reviewer** | `@reviewer` | `PLAN` | DeepSeek R1, Llama 3.1 405B, Nemotron 70B | Strict code quality gate, security auditing (OWASP), memory leak detection, and performance review. |
+| **NVIDIA Specialist** | `@nvidia` | `BUILD` | DeepSeek R1, Llama 3.1 405B, Nemotron 70B | Expert GPU acceleration (CUDA C++, TensorRT-LLM, cuDF, cuOpt, Triton, DALI, DeepStream). |
+
+```bash
+# Examples:
+mach> @architect How should we design the database schema for multi-tenant auth?
+mach> @coder implement the JWT verification middleware in src/middleware/auth.ts
+mach> @tester generate full node:test suite for the auth middleware
+mach> @reviewer audit src/engine/executor.ts for security vulnerabilities
+mach> @nvidia optimize this matrix multiplication kernel with shared memory tiling
+```
+
+---
+
+## 📖 Command Reference (29 Slash Commands)
 
 | Command | Usage | Aliases | Category | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -178,7 +201,7 @@ mach --theme tokyo-night
 | `/heavy` | `/heavy <prompt>` | `/deep`, `/hw` | Execution | Bypass racing and execute using exclusively the Heavyweight model. |
 | `/fast` | `/fast <prompt>` | `/light`, `/quick`| Execution | Bypass racing and execute using exclusively the Lightweight model. |
 | `/review` | `/review <file>` | `/audit` | Execution | Run an in-depth security, bug, and edge-case code review. |
-| `/agent` | `/agent <task>` | `/auto`, `/loop` | Execution | Run in autonomous multi-step agent mode across all drives. |
+| `/agent` | `/agent [name\|reset\|list]` | `/agents`, `/subagent` | Subagents | View, switch, or pin specialized NVIDIA NIM subagents (@architect, @coder, etc.). |
 | `/skills` | `/skills [name] [task]`| `/skill` | Skills | List or execute tasks with official NVIDIA Agent Skills. |
 | `/cuopt` | `/cuopt [task]` | — | Skills | cuOpt shortcut: GPU vehicle routing & LP/MILP optimization. |
 | `/cudf` | `/cudf [task]` | — | Skills | cuDF shortcut: GPU DataFrames & pandas acceleration. |

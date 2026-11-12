@@ -42,6 +42,11 @@ import { renderStatusBar, getGitBranch } from './ui/statusBar.js';
 import { parseAndExpandMentions } from './utils/mentionParser.js';
 import { saveSession, loadSession } from './engine/sessionManager.js';
 import { summarizeOldestTurns } from './engine/contextSummarizer.js';
+import {
+  type SubagentDefinition,
+  parseSubagentFromInput,
+  selectBestNvidiaModel,
+} from './subagents/registry.js';
 
 export interface SessionMessage {
   role: 'user' | 'assistant';
@@ -142,6 +147,10 @@ export interface MachCodeRunOptions {
    * Optional custom PermissionManager instance to govern approvals across turns.
    */
   permissionManager?: PermissionManager;
+  /**
+   * Optional active subagent definition to steer system prompt and NVIDIA model selection.
+   */
+  subagent?: SubagentDefinition;
   /**
    * Optional AbortSignal to interrupt agent operations.
    */
@@ -736,7 +745,11 @@ export async function runMachCode(
     try {
       const initialRace = await raceModels(currentPrompt, lightModel, heavyModel, {
         apiKey,
-        systemPrompt: buildAgentSystemPrompt({ cwd: baseDir, readOnly: options.readOnly }),
+        systemPrompt: buildAgentSystemPrompt({
+          cwd: baseDir,
+          readOnly: options.readOnly,
+          subagent: options.subagent,
+        }),
         strongPool: activeStrongPool,
         weakPool: activeWeakPool,
         handoffWindowMs: options.handoffWindowMs,
@@ -772,6 +785,7 @@ export async function runMachCode(
       apiKey,
       model: raceWinner,
       candidateModels: activeStrongPool,
+      subagent: options.subagent,
       permissionManager: permissionMgr,
       history: options.history?.map((m) => ({ role: m.role, content: m.content })),
       pinnedFiles: options.addedFiles ? Array.from(options.addedFiles) : undefined,
@@ -834,7 +848,7 @@ export async function runMachCode(
       options.history,
       options.addedFiles,
     );
-    const systemPrompt = buildSniperSystemPrompt(contextText);
+    const systemPrompt = buildSniperSystemPrompt(contextText, options.subagent);
 
     options.rl?.pause?.();
 
@@ -1136,7 +1150,7 @@ export function printReplBanner(options: ReplBannerOptions = {}): void {
     `${border('  │  ')}${chalk.magentaBright.bold('███████')}${border('  │')}  ${chalk.dim('Models:')}   ${chalk.magenta.bold(`${poolModels.length} AI models racing`)} ${chalk.gray(`(${uniqueProviders.length} providers)`)}`,
     `${border('  │  ')}${chalk.magenta.bold('██ ▀ ██')}${border('  │')}  ${chalk.dim('Session:')}  ${chalk.white(sessionId)} ${chalk.gray('•')} ${modeBadge} ${chalk.gray('•')} ${approvalBadge}`,
     `${border('  │  ')}${chalk.blueBright.bold('██   ██')}${border('  │')}  ${chalk.dim('Path:')}     ${chalk.white(displayDir)}`,
-    `${border('  ╰───────────╯')}  ${chalk.dim('Commands:')} ${chalk.yellow('/mode')} ${chalk.dim('•')} ${chalk.yellow('/approve')} ${chalk.dim('•')} ${chalk.yellow('/race')} ${chalk.dim('•')} ${chalk.yellow('/plan')} ${chalk.dim('•')} ${chalk.yellow('/help')} ${chalk.dim('•')} ${chalk.yellow('/exit')}`,
+    `${border('  ╰───────────╯')}  ${chalk.dim('Commands:')} ${chalk.yellow('/agent')} ${chalk.dim('•')} ${chalk.yellow('/mode')} ${chalk.dim('•')} ${chalk.yellow('/approve')} ${chalk.dim('•')} ${chalk.yellow('/race')} ${chalk.dim('•')} ${chalk.yellow('/plan')} ${chalk.dim('•')} ${chalk.yellow('/help')}`,
   ];
 
   console.log('\n' + rows.join('\n') + '\n');
@@ -1281,8 +1295,22 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         }
       }
 
+      // Check for prompt-level subagent mention e.g. "@architect how to design DB?"
+      const subagentParse = parseSubagentFromInput(prompt);
+      const effectiveSubagent =
+        subagentParse.subagent ?? runOpts?.subagent ?? commandContext.activeSubagent;
+      const cleanPrompt = subagentParse.subagent ? subagentParse.cleanedPrompt : prompt;
+
+      if (effectiveSubagent && (options.writeToStdout ?? true)) {
+        console.log(
+          chalk.magenta(
+            `  🤖 [Subagent Active: ${effectiveSubagent.name} (${effectiveSubagent.mention})]`,
+          ),
+        );
+      }
+
       // Parse and expand @file mentions in prompt
-      const mentionResult = await parseAndExpandMentions(prompt, baseDir);
+      const mentionResult = await parseAndExpandMentions(cleanPrompt, baseDir);
       if (mentionResult.mentionedFiles.length > 0) {
         for (const mf of mentionResult.mentionedFiles) {
           addedContextFiles.add(mf.relativePath);
@@ -1291,11 +1319,29 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           }
         }
       }
-      const effectivePrompt = prompt + mentionResult.augmentedContext;
+      const effectivePrompt = cleanPrompt + mentionResult.augmentedContext;
 
-      const effectiveStrongPool = commandContext.pinnedModel
+      let subagentPreferredModel: string | undefined;
+      if (effectiveSubagent) {
+        const poolToFilter = commandContext.pinnedModel
+          ? [commandContext.pinnedModel]
+          : (runOpts?.strongPool ?? commandContext.strongPool ?? strongPool);
+        subagentPreferredModel = selectBestNvidiaModel(
+          effectiveSubagent,
+          poolToFilter,
+          commandContext.heavyModel ?? heavyModel,
+        );
+      }
+
+      const baseStrongPool = commandContext.pinnedModel
         ? [commandContext.pinnedModel]
         : (runOpts?.strongPool ?? commandContext.strongPool ?? strongPool);
+
+      const effectiveStrongPool =
+        subagentPreferredModel && !commandContext.pinnedModel
+          ? [subagentPreferredModel, ...baseStrongPool.filter((m) => m !== subagentPreferredModel)]
+          : baseStrongPool;
+
       const effectiveWeakPool = commandContext.pinnedModel
         ? [commandContext.pinnedModel]
         : (runOpts?.weakPool ?? commandContext.weakPool ?? weakPool);
@@ -1316,7 +1362,12 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         history: sessionHistory,
         addedFiles: addedContextFiles,
         autoApprove: runOpts?.autoApprove ?? commandContext.autoApprove,
-        readOnly: runOpts?.readOnly ?? activeMode === 'plan',
+        readOnly:
+          runOpts?.readOnly ??
+          (effectiveSubagent?.defaultMode === 'plan' && activeMode !== 'build'
+            ? true
+            : activeMode === 'plan'),
+        subagent: effectiveSubagent,
         permissionManager,
         agentMode: runOpts?.agentMode ?? options.agentMode ?? true,
         confirmBeforeWrite:
@@ -1426,6 +1477,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           totalTokens,
           autoApprove: commandContext.autoApprove,
           sessionId,
+          subagentName: commandContext.activeSubagent?.id,
         });
         console.log(`\n${sb}\n`);
       }
@@ -1471,6 +1523,10 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     pinnedModel: undefined,
     setPinnedModel(m) {
       commandContext.pinnedModel = m;
+    },
+    activeSubagent: undefined as SubagentDefinition | undefined,
+    setActiveSubagent(sa?: SubagentDefinition) {
+      commandContext.activeSubagent = sa;
     },
     get activeTheme() {
       return getActiveTheme().name;

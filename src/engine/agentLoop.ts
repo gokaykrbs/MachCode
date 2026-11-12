@@ -33,6 +33,12 @@ export interface AgentLoopOptions {
   apiKey: string;
   model: string;
   candidateModels?: string[];
+  subagent?: {
+    id: string;
+    name: string;
+    mention: string;
+    systemPrompt: string;
+  };
   permissionManager?: PermissionManager;
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
   pinnedFiles?: string[];
@@ -311,6 +317,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     pinnedFiles: options.pinnedFiles,
     readOnly: options.readOnly,
     toolsUnavailable: false,
+    subagent: options.subagent,
   });
 
   const messages: AgentChatMessage[] = [{ role: 'system', content: systemPrompt }];

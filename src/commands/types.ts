@@ -1,8 +1,10 @@
 import type readline from 'node:readline/promises';
 import type { SessionMessage, MachCodeRunOptions, MachCodeRunResult } from '../index.js';
 import type { PermissionManager } from '../engine/permissions.js';
+import type { SubagentDefinition } from '../subagents/types.js';
 
-export type CommandCategory = 'Context & Memory' | 'Execution & Modes' | 'Safety & Git' | 'System';
+export type CommandCategory =
+  'Context & Memory' | 'Execution & Modes' | 'Safety & Git' | 'System' | 'Subagents';
 
 export interface FileSnapshot {
   file: string;
@@ -38,6 +40,8 @@ export interface CommandContext {
   setMode?: (mode: 'build' | 'plan') => void;
   pinnedModel?: string;
   setPinnedModel?: (model: string | undefined) => void;
+  activeSubagent?: SubagentDefinition;
+  setActiveSubagent?: (subagent: SubagentDefinition | undefined) => void;
   activeTheme?: string;
   runMachCode: (prompt: string, options?: MachCodeRunOptions) => Promise<MachCodeRunResult>;
 }

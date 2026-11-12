@@ -27,9 +27,11 @@ describe('Autocomplete & Skills Suggestion System', () => {
   it('filters autocomplete items in real time when typing /', () => {
     const items = buildAutocompleteItems();
 
-    // Typing "/" returns all suggestions
+    // Typing "/" returns all slash command suggestions
     const slashOnly = filterAutocompleteItems('/', items);
-    assert.equal(slashOnly.length, items.length);
+    const expectedSlashCount = items.filter((i) => i.prefix.startsWith('/')).length;
+    assert.equal(slashOnly.length, expectedSlashCount);
+    assert.ok(slashOnly.length >= 25);
 
     // Typing non-slash returns empty
     const nonSlash = filterAutocompleteItems('hello world', items);
