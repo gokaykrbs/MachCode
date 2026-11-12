@@ -175,4 +175,73 @@ describe('Agent Tools Suite', () => {
       await fs.rm(tmp, { recursive: true, force: true });
     }
   });
+
+  it('applies unified diff patches via apply_diff tool', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-tools-diff-'));
+    try {
+      const targetFile = path.join(tmp, 'app.ts');
+      await fs.writeFile(
+        targetFile,
+        'export function run() {\n  const x = 1;\n  return x;\n}\n',
+        'utf-8',
+      );
+
+      const diffPatch = `@@ -1,4 +1,4 @@
+ export function run() {
+-  const x = 1;
++  const x = 999;
+   return x;
+ }`;
+
+      const diffPlan = await planToolCall(
+        'apply_diff',
+        { path: 'app.ts', diff: diffPatch },
+        { cwd: tmp },
+      );
+
+      assert.equal(diffPlan.kind, 'write');
+      if (diffPlan.kind === 'write') {
+        assert.ok(diffPlan.newContent.includes('const x = 999;'));
+        await diffPlan.commit();
+        const updated = await fs.readFile(targetFile, 'utf-8');
+        assert.ok(updated.includes('const x = 999;'));
+      }
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to fuzzy matching in edit_file when whitespace has minor discrepancy', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-tools-fuzzy-'));
+    try {
+      const targetFile = path.join(tmp, 'service.ts');
+      // Has trailing spaces on second line
+      await fs.writeFile(
+        targetFile,
+        'export class Service {\n  connect() {   \n    return true;\n  }\n}\n',
+        'utf-8',
+      );
+
+      // Model sends without trailing spaces
+      const editPlan = await planToolCall(
+        'edit_file',
+        {
+          path: 'service.ts',
+          old_string: '  connect() {\n    return true;\n  }',
+          new_string: '  connect() {\n    return false;\n  }',
+        },
+        { cwd: tmp },
+      );
+
+      assert.equal(editPlan.kind, 'write');
+      if (editPlan.kind === 'write') {
+        assert.ok(editPlan.newContent.includes('return false;'));
+        await editPlan.commit();
+        const updated = await fs.readFile(targetFile, 'utf-8');
+        assert.ok(updated.includes('return false;'));
+      }
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
+  });
 });

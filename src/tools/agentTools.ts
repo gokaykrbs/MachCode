@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { OpenAIToolDefinition } from './nvidiaSkills.js';
+import { applyUnifiedDiff, fuzzyReplace } from '../utils/diffApplier.js';
 
 /**
  * Agent tool suite (Claude Code / OpenCode style).
@@ -90,7 +91,7 @@ export interface ReadToolPlan {
 export interface WriteToolPlan {
   kind: 'write';
   title: string;
-  toolName: 'edit_file' | 'write_file';
+  toolName: 'edit_file' | 'write_file' | 'apply_diff';
   absPath: string;
   displayPath: string;
   outsideWorkspace: boolean;
@@ -216,6 +217,15 @@ export const AGENT_TOOL_DEFINITIONS: OpenAIToolDefinition[] = [
       },
     },
     ['path', 'old_string', 'new_string'],
+  ),
+  fn(
+    'apply_diff',
+    'Apply a unified diff patch to a file. Supports standard @@ -start,len +start,len @@ format with line drift tolerance. The user reviews a diff and must approve the change.',
+    {
+      path: { type: 'string', description: 'File path, relative or absolute (any drive).' },
+      diff: { type: 'string', description: 'Unified diff content to apply.' },
+    },
+    ['path', 'diff'],
   ),
   fn(
     'write_file',
@@ -734,10 +744,54 @@ async function commitWrite(
   };
 }
 
+async function planDiff(args: Record<string, unknown>, ctx: ToolContext): Promise<WriteToolPlan> {
+  const absPath = resolveAnyPath(pathArg(args)!, ctx.cwd);
+  const diffRaw = args.diff ?? args.patch;
+  if (typeof diffRaw !== 'string' || diffRaw.trim().length === 0) {
+    throw new ToolError(
+      'apply_diff requires a string argument "diff" containing unified diff syntax.',
+    );
+  }
+
+  let previous: string;
+  try {
+    previous = await fs.readFile(absPath, 'utf-8');
+  } catch {
+    throw new ToolError(`File not found: ${absPath}. Use write_file to create it.`);
+  }
+
+  const patch = applyUnifiedDiff(previous, diffRaw);
+  if (!patch.success) {
+    throw new ToolError(`Failed to apply unified diff patch to ${absPath}: ${patch.error}`);
+  }
+
+  const shown = displayPath(absPath, ctx.cwd);
+  return {
+    kind: 'write',
+    title: shown,
+    toolName: 'apply_diff',
+    absPath,
+    displayPath: shown,
+    outsideWorkspace: !isInsideDir(absPath, ctx.cwd),
+    previousContent: previous,
+    newContent: patch.content,
+    commit: () => commitWrite(absPath, patch.content, false),
+  };
+}
+
 async function planEdit(args: Record<string, unknown>, ctx: ToolContext): Promise<WriteToolPlan> {
+  if (typeof args.diff === 'string' || typeof args.patch === 'string') {
+    return planDiff(args, ctx);
+  }
+
   const absPath = resolveAnyPath(pathArg(args)!, ctx.cwd);
   const oldRaw = args.old_string ?? args.oldString ?? args.old_str;
   const newRaw = args.new_string ?? args.newString ?? args.new_str;
+
+  if (typeof oldRaw === 'string' && (oldRaw.startsWith('@@') || oldRaw.startsWith('--- '))) {
+    return planDiff({ path: pathArg(args), diff: oldRaw }, ctx);
+  }
+
   if (typeof oldRaw !== 'string' || typeof newRaw !== 'string') {
     throw new ToolError('edit_file requires string arguments "old_string" and "new_string".');
   }
@@ -773,6 +827,24 @@ async function planEdit(args: Record<string, unknown>, ctx: ToolContext): Promis
   }
 
   if (occurrences === 0) {
+    // Attempt fuzzy line matching fallback for minor indentation or trailing space discrepancies
+    const fuzzy = fuzzyReplace(previous, oldStr, newStr);
+    if (fuzzy.success) {
+      const next = fuzzy.result;
+      const shown = displayPath(absPath, ctx.cwd);
+      return {
+        kind: 'write',
+        title: shown,
+        toolName: 'edit_file',
+        absPath,
+        displayPath: shown,
+        outsideWorkspace: !isInsideDir(absPath, ctx.cwd),
+        previousContent: previous,
+        newContent: next,
+        commit: () => commitWrite(absPath, next, false),
+      };
+    }
+
     throw new ToolError(
       `old_string was not found in ${absPath}. Re-read the file with read_file and copy the exact text (including whitespace/indentation).`,
     );
@@ -1015,6 +1087,9 @@ export async function planToolCall(
     }
     case 'edit_file':
       return planEdit(args, ctx);
+    case 'apply_diff':
+    case 'patch_file':
+      return planDiff(args, ctx);
     case 'write_file':
       return planWrite(args, ctx);
     case 'run_command':
