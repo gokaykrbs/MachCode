@@ -99,7 +99,11 @@ MachCode includes a live terminal Status Bar and 7 beautiful themes:
 - 🎨 **Theme Engine (`/theme`):** Instant runtime theme switching across 7 terminal color palettes.
 - 📊 **Status Bar (`/status`):** Live diagnostics showing active mode, model pool, current directory, git branch, tokens, and approval policy.
 - 🧩 **Native NVIDIA Agent Skills:** Automatic integration with official [`NVIDIA/skills`](https://github.com/NVIDIA/skills) catalog.
-- 🛡️ **In-Memory Undo (`/undo`):** Reverts the last file modification made by the AI.
+- 🔌 **Model Context Protocol (MCP) Bridge:** Connect external tool servers and local JSON MCP definitions via `.machcode/mcp.json` and `/mcp`.
+- 🔍 **High-Performance Multi-File Code Search (`/search`):** Fast regex and text scanner with context lines, file pattern filters, and secret protections.
+- 🔄 **Unified Diff Patch Applicator (`apply_diff`):** Resilient chunk and hunk parser with offset tolerance and fuzzy line matching fallback.
+- 🛡️ **Multi-File Snapshot Rollback (`/snapshots`, `/undo [file|all]`):** Chronological file mutation snapshots allowing selective or full rollbacks.
+- 🏎️ **Live Parallel Benchmark (`/race`):** Parallel model latency, TTFT (time-to-first-token), and TPS (tokens per second) profiler.
 
 ---
 
@@ -159,7 +163,7 @@ mach --theme tokyo-night
 
 ---
 
-## 📖 Command Reference (24 Slash Commands)
+## 📖 Command Reference (28 Slash Commands)
 
 | Command | Usage | Aliases | Category | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -176,9 +180,12 @@ mach --theme tokyo-night
 | `/cudf` | `/cudf [task]` | — | Skills | cuDF shortcut: GPU DataFrames & pandas acceleration. |
 | `/cudaq` | `/cudaq [task]` | — | Skills | CUDA-Q shortcut: Quantum-classical hybrid programming. |
 | `/approve` | `/approve [ask\|auto]` | `/confirm` | Safety & Git | Toggle interactive diff approval before modifying files. |
-| `/undo` | `/undo` | `/revert` | Safety & Git | Revert the last file modification made by the AI. |
+| `/undo` | `/undo [file\|all]` | `/revert` | Safety & Git | Revert file modifications made by the AI (last, specific, or all). |
+| `/snapshots`| `/snapshots` | `/snaps`, `/history`| Safety & Git | View chronological list of file modification snapshots. |
+| `/branch` | `/branch [name]` | `/branches` | Safety & Git | Show current git branch or switch branches. |
 | `/diff` | `/diff` | — | Safety & Git | Show colorized terminal diff of uncommitted git changes. |
 | `/commit` | `/commit` | `/ci` | Safety & Git | Generate conventional commit message and commit changes. |
+| `/search` | `/search <query>` | `/grep`, `/find` | Context | Fast multi-file regex and text search across the workspace. |
 | `/add` | `/add <path>` | — | Context | Add a specific file or folder to the active session context. |
 | `/drop` | `/drop <path>` | — | Context | Remove a file or folder from session context. |
 | `/save` | `/save [name]` | `/snapshot` | Context | Save current session snapshot to disk for later resumption. |
@@ -187,7 +194,8 @@ mach --theme tokyo-night
 | `/status` | `/status` | `/sb`, `/bar` | System | Display interactive session diagnostics card and status bar. |
 | `/theme` | `/theme [name]` | `/themes` | System | Switch terminal theme (tokyo-night, dracula, matrix, monokai...). |
 | `/model` | `/model [id\|reset]` | `/models`, `/llm` | System | Pin queries to a specific model or view racing pools. |
-| `/race` | `/race` | `/benchmark` | System | Run a live parallel speed benchmark across all AI models. |
+| `/mcp` | `/mcp [reload\|list]` | `/servers` | System | Manage Model Context Protocol (MCP) servers and external tools. |
+| `/race` | `/race` | `/benchmark` | System | Run a live parallel speed, TTFT, and TPS benchmark across AI models. |
 | `/tokens` | `/tokens` | `/stats` | System | Show session token usage statistics. |
 | `/run` | `/run <cmd>` | `/exec` | System | Execute a shell command directly in the workspace. |
 | `/help` | `/help` | `/h` | System | Print table of all slash commands. |
@@ -198,7 +206,7 @@ mach --theme tokyo-night
 
 ## 🧪 Testing
 
-MachCode includes a comprehensive automated test suite covering all phases (`77/77` passing across 18 suites):
+MachCode includes a comprehensive automated test suite covering all phases and features (`97/97` passing across 23 suites):
 
 ```bash
 npm test
