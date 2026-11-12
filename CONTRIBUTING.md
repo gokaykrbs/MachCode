@@ -48,6 +48,14 @@ pnpm run lint
 pnpm run format:check
 ```
 
+### CI / CD Workflows
+
+Ready-to-use GitHub Actions workflows for multi-OS testing (Ubuntu, Windows, macOS across Node 18, 20, 22), automated NPM releases, and secret vulnerability scanning are maintained in `.ci-workflows/`. To enable them on your repository fork:
+```bash
+mkdir -p .github/workflows
+cp .ci-workflows/* .github/workflows/
+```
+
 ---
 
 ## Coding Standards & Workflow
