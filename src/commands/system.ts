@@ -320,6 +320,65 @@ export const exitCommand: SlashCommand = {
   },
 };
 
+export const mcpCommand: SlashCommand = {
+  name: 'mcp',
+  description: 'Manage Model Context Protocol (MCP) servers and external tools',
+  category: 'System',
+  usage: '/mcp [reload|list]',
+  aliases: ['servers'],
+  execute: async (args: string, context: CommandContext) => {
+    const sub = args.trim().toLowerCase();
+    const { defaultMcpBridge } = await import('../tools/mcpBridge.js');
+
+    if (sub === 'reload' || sub === 'refresh') {
+      const res = await defaultMcpBridge.loadConfig(context.baseDir);
+      console.log(
+        chalk.green(`✔ MCP configuration reloaded: ${res.serverCount} server(s) active.`),
+      );
+      return;
+    }
+
+    const servers = defaultMcpBridge.getServers();
+    const tools = defaultMcpBridge.getToolDefinitions();
+
+    console.log(
+      chalk.cyan.bold('\n══════════════════════════════════════════════════════════════════'),
+    );
+    console.log(chalk.cyan.bold('             MODEL CONTEXT PROTOCOL (MCP) INTEGRATION'));
+    console.log(
+      chalk.cyan.bold('══════════════════════════════════════════════════════════════════\n'),
+    );
+
+    if (servers.length === 0) {
+      console.log(chalk.dim('No external MCP servers configured.'));
+      console.log(chalk.dim('To configure, create .machcode/mcp.json in your workspace:'));
+      console.log(
+        chalk.gray(
+          `{\n  "mcpServers": {\n    "my-server": { "command": "npx", "args": ["-y", "my-mcp-pkg"] }\n  }\n}`,
+        ),
+      );
+    } else {
+      console.log(chalk.yellow.bold(`Active MCP Servers (${servers.length}):`));
+      for (const s of servers) {
+        console.log(
+          `  • ${chalk.green.bold(s.name)} ${s.command ? chalk.dim(`(${s.command})`) : ''} — ${s.toolCount} tool(s) registered`,
+        );
+      }
+      if (tools.length > 0) {
+        console.log(chalk.yellow.bold(`\nExposed MCP Tools (${tools.length}):`));
+        for (const t of tools) {
+          console.log(
+            `  • ${chalk.white.bold(t.function.name)}: ${chalk.dim(t.function.description)}`,
+          );
+        }
+      }
+    }
+    console.log(
+      chalk.dim('\nTip: Type /mcp reload to re-read .machcode/mcp.json after editing.\n'),
+    );
+  },
+};
+
 import { themeCommand } from './theme.js';
 import { modelCommand } from './models.js';
 import { statusCommand } from './status.js';
@@ -333,6 +392,7 @@ export const systemCommands: SlashCommand[] = [
   statusCommand,
   themeCommand,
   modelCommand,
+  mcpCommand,
   tokensCommand,
   runCommand,
   configCommand,
