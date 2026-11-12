@@ -6,9 +6,13 @@
 </p>
 
 <p align="center">
+  <a href="README.tr.md">🇹🇷 Türkçe Dokümantasyon</a> | <a href="README.md">🇬🇧 English Documentation</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/gokaykrbs/MachCode/releases"><img src="https://img.shields.io/badge/version-v0.1.0-blue.svg?style=flat-square" alt="version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
-  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-77%2F77%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-97%2F97%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
   <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.6-blue.svg?style=flat-square&logo=typescript" alt="TypeScript" /></a>
   <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-57%2B%20Models%20Racing-76B900.svg?style=flat-square&logo=nvidia" alt="NVIDIA NIM" /></a>
   <a href="#"><img src="https://img.shields.io/badge/REPL-Interactive%20Q%26A%20%2B%20Code-cyan.svg?style=flat-square" alt="REPL Mode" /></a>

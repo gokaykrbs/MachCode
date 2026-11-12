@@ -1,0 +1,62 @@
+name: Bug Report
+description: File a bug report to help us improve MachCode
+title: '[Bug]: '
+labels: ['bug', 'triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please check if an existing issue covers your bug before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: MachCode Version
+      description: What version of MachCode are you running? (Run `machcode --version`)
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Linux (Ubuntu/Debian)
+        - Linux (Arch/Fedora/Other)
+        - macOS (Apple Silicon - M1/M2/M3)
+        - macOS (Intel)
+        - Windows 10/11 (PowerShell)
+        - Windows 10/11 (WSL2)
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js Version
+      description: Run `node -v`
+      placeholder: v20.11.0
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the Bug
+      description: A clear and concise description of what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this bug?
+      value: |
+        1. Run `machcode`
+        2. Execute `...`
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Terminal Output / Error Logs
+      description: Please paste any relevant error logs or stack traces.
+      render: shell
