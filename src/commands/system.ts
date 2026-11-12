@@ -221,67 +221,39 @@ export const raceCommand: SlashCommand = {
     );
 
     console.log(
-      chalk.cyan.bold(`\n🏎️  Racing ${pool.length} AI models in parallel on NVIDIA NIM...\n`),
+      chalk.cyan.bold(
+        `\n🏎️  Racing & Benchmarking ${pool.length} AI models in parallel on NVIDIA NIM...\n`,
+      ),
     );
 
-    const fetchFn = context.fetchImpl ?? globalThis.fetch;
-    const results = await Promise.all(
-      pool.map(async (model) => {
-        const start = Date.now();
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8000);
-        try {
-          const res = await fetchFn('https://integrate.api.nvidia.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model,
-              messages: [{ role: 'user', content: 'Say OK' }],
-              max_tokens: 16,
-            }),
-            signal: controller.signal,
-          });
-          clearTimeout(timer);
-          return {
-            model,
-            ok: res.ok,
-            status: String(res.status),
-            latencyMs: Date.now() - start,
-          };
-        } catch {
-          clearTimeout(timer);
-          return {
-            model,
-            ok: false,
-            status: 'TIMEOUT',
-            latencyMs: Date.now() - start,
-          };
-        }
-      }),
-    );
-
-    results.sort((a, b) => {
-      if (a.ok !== b.ok) return a.ok ? -1 : 1;
-      return a.latencyMs - b.latencyMs;
+    const { runModelBenchmark } = await import('../engine/benchmark.js');
+    const report = await runModelBenchmark(pool, {
+      apiKey,
+      fetchImpl: context.fetchImpl,
+      timeoutMs: 8000,
     });
 
     const medals = ['🏆 1st', '🥈 2nd', '🥉 3rd'];
     let okRank = 0;
-    for (const r of results) {
-      if (r.ok) {
+    const sorted = [...report.results].sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'success' ? -1 : 1;
+      return a.totalLatencyMs - b.totalLatencyMs;
+    });
+
+    for (const r of sorted) {
+      if (r.status === 'success') {
         const badge = medals[okRank]
           ? chalk.yellow.bold(medals[okRank].padEnd(8))
           : chalk.green('✔ OK    ');
         okRank++;
+        const ttftStr = r.ttftMs ? `TTFT: ${r.ttftMs}ms` : '';
+        const tpsStr = r.tokensPerSecond > 0 ? `${r.tokensPerSecond} t/s` : '';
         console.log(
-          `  ${badge} ${chalk.white.bold(r.model.padEnd(46))} ${chalk.green(`${r.latencyMs}ms`)} ${chalk.gray(`(HTTP ${r.status})`)}`,
+          `  ${badge} ${chalk.white.bold(r.model.padEnd(44))} ${chalk.green(`${r.totalLatencyMs}ms`.padEnd(8))} ${chalk.dim(`│ ${ttftStr.padEnd(14)} │ ${tpsStr}`)}`,
         );
       } else {
         console.log(
-          `  ${chalk.red('✖ FAIL  ')} ${chalk.gray(r.model.padEnd(46))} ${chalk.red(`${r.status} (${r.latencyMs}ms)`)}`,
+          `  ${chalk.red('✖ FAIL  ')} ${chalk.gray(r.model.padEnd(44))} ${chalk.red(`${r.status.toUpperCase()} (${r.totalLatencyMs}ms)`)}`,
         );
       }
     }
