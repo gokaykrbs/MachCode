@@ -32,6 +32,7 @@ export interface AutoRouterOptions {
  * so multi-model racing genuinely competes across distinct AI providers.
  */
 export const VERIFIED_STRONG_POOL_MODELS: readonly string[] = [
+  'moonshotai/kimi-k3.1',
   'moonshotai/kimi-k2.6',
   'deepseek-ai/deepseek-r1',
   'deepseek-ai/deepseek-coder-6.7b-instruct',
@@ -44,6 +45,7 @@ export const VERIFIED_STRONG_POOL_MODELS: readonly string[] = [
 ];
 
 export const VERIFIED_WEAK_POOL_MODELS: readonly string[] = [
+  'poolside/laguna-xs-2.1',
   'minimaxai/minimax-m3.1-flash',
   'openai/gpt-oss-20b',
   'google/diffusiongemma-26b-a4b-it',
@@ -104,6 +106,16 @@ export function isStrongModel(id: string): boolean {
     return false;
   }
 
+  // Micro and lightweight fast models belong in WeakPool, not StrongPool
+  if (
+    lower.includes('xs-') ||
+    lower.includes('laguna') ||
+    lower.includes('nano-fast') ||
+    lower.includes('bolt-e4b')
+  ) {
+    return false;
+  }
+
   if (
     lower.includes('kimi') ||
     lower.includes('moonshot') ||
@@ -152,6 +164,8 @@ export function isEliteHeavyModel(id: string): boolean {
     lower.includes('flash') ||
     lower.includes('bolt-e4b') ||
     lower.includes('nano-fast') ||
+    lower.includes('xs') ||
+    lower.includes('laguna') ||
     lower.includes('guard')
   ) {
     return false;

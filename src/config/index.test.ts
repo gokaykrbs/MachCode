@@ -202,6 +202,7 @@ describe('Dynamic Model Fetching & Configuration', () => {
   });
 
   it('isEliteHeavyModel accurately identifies frontier reasoning and heavy models', () => {
+    assert.equal(isEliteHeavyModel('moonshotai/kimi-k3.1'), true);
     assert.equal(isEliteHeavyModel('moonshotai/kimi-k2.6'), true);
     assert.equal(isEliteHeavyModel('deepseek-ai/deepseek-r1'), true);
     assert.equal(isEliteHeavyModel('deepseek-ai/deepseek-coder-33b-instruct'), true);
@@ -210,7 +211,8 @@ describe('Dynamic Model Fetching & Configuration', () => {
     assert.equal(isEliteHeavyModel('meta/codellama-70b'), true);
     assert.equal(isEliteHeavyModel('meta/llama-3.1-405b-instruct'), true);
 
-    // Flash/small models must NOT be elite heavy models
+    // Flash/small/XS models must NOT be elite heavy models
+    assert.equal(isEliteHeavyModel('poolside/laguna-xs-2.1'), false);
     assert.equal(isEliteHeavyModel('minimaxai/minimax-m3.1-flash'), false);
     assert.equal(isEliteHeavyModel('nvidia/nemotron-3.5-bolt-e4b'), false);
     assert.equal(isEliteHeavyModel('deepseek-ai/deepseek-coder-6.7b-instruct'), false);
