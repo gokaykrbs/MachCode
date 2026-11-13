@@ -406,9 +406,7 @@ async function executeTier(
           // introduce a fair handicap window so reasoning models have time to think and emit!
           const hasEliteCompetitor = uniqueModels.some(isEliteHeavyModel);
           const isFlashModel =
-            model.includes('bolt-e4b') ||
-            model.includes('flash') ||
-            model.includes('nano-fast');
+            model.includes('bolt-e4b') || model.includes('flash') || model.includes('nano-fast');
 
           if (uniqueModels.length > 1 && isFlashModel && hasEliteCompetitor) {
             await new Promise<void>((r) => {

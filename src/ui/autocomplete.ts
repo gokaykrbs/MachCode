@@ -787,7 +787,8 @@ export async function promptWithSuggestions(
       if (key.name === 'right') {
         if (cursor < buffer.length) {
           const nextCode = buffer.charCodeAt(cursor);
-          const step = nextCode >= 0xd800 && nextCode <= 0xdbff && cursor + 1 < buffer.length ? 2 : 1;
+          const step =
+            nextCode >= 0xd800 && nextCode <= 0xdbff && cursor + 1 < buffer.length ? 2 : 1;
           cursor += step;
           render();
         } else {
@@ -822,7 +823,8 @@ export async function promptWithSuggestions(
       if (key.name === 'delete') {
         if (cursor < buffer.length) {
           const nextCode = buffer.charCodeAt(cursor);
-          const step = nextCode >= 0xd800 && nextCode <= 0xdbff && cursor + 1 < buffer.length ? 2 : 1;
+          const step =
+            nextCode >= 0xd800 && nextCode <= 0xdbff && cursor + 1 < buffer.length ? 2 : 1;
           buffer = buffer.slice(0, cursor) + buffer.slice(cursor + step);
           selectedIndex = 0;
           scrollOffset = 0;

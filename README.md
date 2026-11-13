@@ -25,18 +25,6 @@
 
 **MachCode** is a terminal-native AI coding and conversational Q&A CLI engineered for high-velocity software development. Built in the spirit of **Antigravity CLI**, **Claude Code**, and **OpenCode**, MachCode eliminates single-model bottlenecks by firing **all usable generative AI models available in your NVIDIA Build (NIM) API key** (57+ models across 21+ providers such as **OpenAI, Google Gemma, DeepSeek, Qwen, MiniMax, Mistral, Meta Llama, Moonshot Kimi, Microsoft Phi, Z-AI GLM, NVIDIA Nemotron**) in parallel, locking onto the first model that emits a real answer token, and immediately aborting the remaining streams.
 
----
-
-## 🎯 Implementation Roadmap (All Phases Completed)
-
-| Phase | Title | Status | Highlights & Deliverables |
-| :--- | :--- | :---: | :--- |
-| **Faz 0** | **Hazırlık (Preparation)** | ✅ Completed | Repository architecture, TypeScript 5.6 strict ESM setup, Node.js test runner harness, NVIDIA NIM multi-provider model discovery. |
-| **Faz 1** | **Çekirdek Döngü (Core Loop)** | ✅ Completed | Parallel model racing engine (`streamRacer.ts`), TTFT token locking, `<plan>` reasoning separation, read-only tools (`read_file`, `list_dir`, `glob`, `grep`), Plan Mode. |
-| **Faz 2** | **Düzenleme & Komut (Editing & Commands)** | ✅ Completed | Surgical file operations (`edit_file`, `write_file`, `run_command`), interactive colorized git diff preview `[Y/n/a/d]`, permission security layer, path guards, Build Mode. |
-| **Faz 3** | **Terminal Deneyimi (Terminal UX)** | ✅ Completed | Antigravity-style responsive Status Bar (`[BUILD] │ 🏁 57 models │ 📁 MachCode │ 🌿 main │ 🪙 1.4k tokens`), 7 high-fidelity color themes (`/theme`), `@file` mentions with live auto-expansion, model selector (`/model`), Tab mode toggling. |
-| **Faz 4** | **Dayanıklılık (Resilience & Sessions)** | ✅ Completed | Full session persistence in `~/.machcode/sessions/`, `/save`, `/sessions`, `/resume`, `--resume` CLI flag, 20-step loop budget guard, context summarization engine to prevent context window overflow, Esc interruption recovery. |
-| **Faz 5** | **Paketleme & Dağıtım (Packaging)** | ✅ Completed | Global bin entrypoints (`mach`, `machcode`), cross-project execution from any directory (`npm link`), zero-config CLI argument parser (`--resume`, `--mode`, `--theme`, `--yes`), full documentation. |
 
 ---
 

@@ -350,19 +350,14 @@ describe('Tiered Priority Fallback Engine (tieredFallback / raceModels)', () => 
       recordedRequests,
     );
 
-    const result = await tieredFallback(
-      'Ağır ve zor refactoring görevi',
-      undefined,
-      undefined,
-      {
-        apiKey: 'nvapi-test-key',
-        strongPool: [HEAVY_MODEL, FAST_MODEL],
-        heavyTimeoutMs: 100,
-        writeToStdout: false,
-        debugLogPath: null,
-        fetchImpl: mockFetch,
-      },
-    );
+    const result = await tieredFallback('Ağır ve zor refactoring görevi', undefined, undefined, {
+      apiKey: 'nvapi-test-key',
+      strongPool: [HEAVY_MODEL, FAST_MODEL],
+      heavyTimeoutMs: 100,
+      writeToStdout: false,
+      debugLogPath: null,
+      fetchImpl: mockFetch,
+    });
 
     // When Kimi fails / times out, automatically falls back to fast model
     assert.equal(result.winnerModel, FAST_MODEL);
