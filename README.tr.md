@@ -153,17 +153,19 @@ Karmaşık düşünmeye gerek olmayan basit sorularda en hızlı hafif modele (`
 mach> /fast Python'da liste ters çevirme kodunu yaz
 ```
 
-### 3. `/model [id|reset]` — Belirli Modele Sabitleme
-Oturum boyunca tüm sorularınızın tek bir model tarafından cevaplanmasını sağlar:
+### 3. `/model [id|reset|refresh]` — Canlı Senkronizasyon ve Modele Sabitleme
+NVIDIA Build API'si güncellendikçe ve yeni modeller eklendikçe, sisteminiz API anahtarınız üzerinden dinamik olarak senkronize olur:
+- `mach> /model`: Aktif NVIDIA NIM model havuzunu ve API ile son senkronizasyon zamanını görüntüler.
+- `mach> /model refresh`: Doğrudan NVIDIA Build API'sine (`https://integrate.api.nvidia.com/v1/models`) bağlanarak API anahtarınızın erişebildiği tüm güncel modelleri anında keşfeder, sınıflandırır ve havuzu yeniler.
+- `mach> /model <model-id>`: Oturum boyunca tüm soruları belirli bir modele kilitler (Örn: `/model kimi-k3.1`).
+- `mach> /model reset`: Sabitlemeyi kaldırır ve paralel yarış moduna geri döner.
+
 ```bash
 # Kimi K3.1 modeline sabitle:
 mach> /model moonshotai/kimi-k3.1
 
-# DeepSeek R1 modeline sabitle:
-mach> /model deepseek-ai/deepseek-r1
-
-# Qwen Coder modeline sabitle:
-mach> /model qwen/qwen2.5-coder-32b-instruct
+# NVIDIA Build API'sindeki en yeni modelleri anında çek ve güncelle:
+mach> /model refresh
 
 # Sabitlemeyi kaldır ve paralel yarış moduna geri dön:
 mach> /model reset

@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchNvidiaModels, autoAssignAndSaveModels, saveConfig, loadConfig } from './index.js';
+import {
+  fetchNvidiaModels,
+  autoAssignAndSaveModels,
+  saveConfig,
+  loadConfig,
+  ensureConfig,
+} from './index.js';
 import {
   autoRouteModels,
   extractModelParamCount,
@@ -217,5 +223,31 @@ describe('Dynamic Model Fetching & Configuration', () => {
     assert.equal(isEliteHeavyModel('nvidia/nemotron-3.5-bolt-e4b'), false);
     assert.equal(isEliteHeavyModel('deepseek-ai/deepseek-coder-6.7b-instruct'), false);
     assert.equal(isEliteHeavyModel('openai/gpt-oss-20b'), false);
+  });
+
+  it('ensureConfig dynamically syncs models from NVIDIA Build API when refresh is forced or key changes', async () => {
+    const mockFetch: typeof fetch = async () => {
+      return new Response(
+        JSON.stringify({
+          data: [
+            { id: 'moonshotai/kimi-k3.1' },
+            { id: 'deepseek-ai/deepseek-r1' },
+            { id: 'minimaxai/minimax-m3.1-flash' },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    };
+
+    const cfg = await ensureConfig({
+      apiKey: 'nvapi-mock-sync-key',
+      fetchImpl: mockFetch,
+      forceRefresh: true,
+    });
+
+    assert.equal(cfg.nvidiaApiKey, 'nvapi-mock-sync-key');
+    assert.ok(Array.isArray(cfg.strongPool) && cfg.strongPool.includes('moonshotai/kimi-k3.1'));
+    assert.ok(Array.isArray(cfg.strongPool) && cfg.strongPool.includes('deepseek-ai/deepseek-r1'));
+    assert.ok(Array.isArray(cfg.weakPool) && cfg.weakPool.includes('minimaxai/minimax-m3.1-flash'));
   });
 });

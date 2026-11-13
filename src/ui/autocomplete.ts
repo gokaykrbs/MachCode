@@ -136,8 +136,8 @@ export function buildAutocompleteItems(
     },
     {
       prefix: '/model',
-      displayCommand: '/model [model-id|reset]',
-      description: 'Pin queries to model or view racing pools',
+      displayCommand: '/model [model-id|reset|refresh]',
+      description: 'View, pin, or dynamically sync models with NVIDIA NIM API',
     },
     {
       prefix: '/mode',

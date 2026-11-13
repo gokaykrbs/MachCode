@@ -164,17 +164,19 @@ Bypasses racing for trivial lookups, routing to the fastest lightweight model:
 mach> /fast Write a bash one-liner to find all *.log files older than 7 days
 ```
 
-### 3. `/model [id|reset]` — Pin a Specific Model
-Pins all subsequent queries in the session to a chosen NIM model:
+### 3. `/model [id|reset|refresh]` — Live Dynamic Sync & Model Pinning
+As NVIDIA releases new models on NVIDIA Build, MachCode discovers and balances them dynamically based on your API key:
+- `mach> /model`: Displays the active NIM racing pool and the timestamp of the last live API sync.
+- `mach> /model refresh`: Connects directly to `https://integrate.api.nvidia.com/v1/models` using your API key, discovers newly added models, auto-routes them, and refreshes the pool live.
+- `mach> /model <model-id>`: Pins queries to a specific model (e.g. `/model kimi-k3.1`).
+- `mach> /model reset`: Resumes full multi-model parallel racing.
+
 ```bash
 # Pin to Moonshot Kimi K3.1:
 mach> /model moonshotai/kimi-k3.1
 
-# Pin to DeepSeek R1:
-mach> /model deepseek-ai/deepseek-r1
-
-# Pin to Qwen 2.5 Coder 32B:
-mach> /model qwen/qwen2.5-coder-32b-instruct
+# Sync live models directly from NVIDIA Build API:
+mach> /model refresh
 
 # Unpin and return to multi-model parallel racing:
 mach> /model reset

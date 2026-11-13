@@ -1,18 +1,21 @@
 import chalk from 'chalk';
 import { getActiveTheme } from '../ui/theme.js';
+import { loadConfig } from '../config/index.js';
 import type { SlashCommand, CommandContext } from './types.js';
 
 export const modelCommand: SlashCommand = {
   name: 'model',
-  description: 'View active model racing pools, or pin queries to a specific model',
+  description:
+    'View active model racing pools, pin queries to a model, or sync live with NVIDIA Build API',
   category: 'System',
-  usage: '/model [model-id|reset]',
+  usage: '/model [model-id|reset|refresh]',
   aliases: ['models', 'llm'],
   execute: async (args: string, context: CommandContext) => {
     const raw = args.trim();
     const theme = getActiveTheme();
 
     if (!raw) {
+      const existing = await loadConfig();
       console.log(
         theme.primary('\n══════════════════════════════════════════════════════════════════'),
       );
@@ -33,8 +36,14 @@ export const modelCommand: SlashCommand = {
 
       console.log(`  ${chalk.bold('Fast Lightweight Model:')} ${chalk.yellow(context.lightModel)}`);
       console.log(
-        `  ${chalk.bold('Smart Heavyweight Model:')} ${chalk.yellow(context.heavyModel)}\n`,
+        `  ${chalk.bold('Smart Heavyweight Model:')} ${chalk.yellow(context.heavyModel)}`,
       );
+
+      if (existing?.updatedAt) {
+        const syncDate = new Date(existing.updatedAt).toLocaleString();
+        console.log(`  ${chalk.bold('Live NIM Catalog Sync:')} ${chalk.cyan(syncDate)}`);
+      }
+      console.log('');
 
       const strongPool = context.strongPool ?? [];
       const weakPool = context.weakPool ?? [];
@@ -60,9 +69,59 @@ export const modelCommand: SlashCommand = {
 
       console.log(
         chalk.dim(
-          '\nTip: To pin a specific model, type /model <model-id>. To resume full racing, type /model reset.\n',
+          '\nTips:' +
+            '\n  • To pin a specific model:     /model <model-id>' +
+            '\n  • To resume full racing:        /model reset' +
+            '\n  • To sync live with NVIDIA:     /model refresh\n',
         ),
       );
+      return;
+    }
+
+    const sub = raw.toLowerCase();
+    if (sub === 'refresh' || sub === 'sync') {
+      const existing = await loadConfig();
+      const apiKey = context.apiKey ?? existing?.nvidiaApiKey;
+      if (!apiKey) {
+        console.log(chalk.red('\n✖ Cannot refresh: NVIDIA_API_KEY is not configured.\n'));
+        return;
+      }
+
+      console.log(
+        chalk.cyan(
+          '\n🔄 Connecting to NVIDIA Build API (https://integrate.api.nvidia.com/v1/models)...',
+        ),
+      );
+      try {
+        const { autoAssignAndSaveModels } = await import('../config/index.js');
+        const updated = await autoAssignAndSaveModels(apiKey, undefined, context.fetchImpl);
+        context.lightModel = updated.lightModel;
+        context.heavyModel = updated.heavyModel;
+        context.strongPool = updated.strongPool;
+        context.weakPool = updated.weakPool;
+
+        const totalDiscovered = (updated.strongPool?.length ?? 0) + (updated.weakPool?.length ?? 0);
+        console.log(
+          theme.success(
+            `\n✔ NVIDIA Build API Sync Complete! (${totalDiscovered} active models discovered for your API key)`,
+          ),
+        );
+        console.log(
+          `  ${chalk.bold('Fast Lightweight Model:')} ${chalk.yellow(updated.lightModel)}`,
+        );
+        console.log(
+          `  ${chalk.bold('Smart Heavyweight Model:')} ${chalk.yellow(updated.heavyModel)}`,
+        );
+        console.log(
+          `  ${chalk.cyan('StrongPool:')} ${chalk.white(updated.strongPool?.length ?? 0)} models ready for parallel racing.\n`,
+        );
+      } catch (err) {
+        console.log(
+          chalk.red(
+            `\n✖ Failed to sync models from NVIDIA Build API: ${err instanceof Error ? err.message : String(err)}\n`,
+          ),
+        );
+      }
       return;
     }
 

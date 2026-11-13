@@ -214,11 +214,14 @@ import {
   type AutoRouterOptions,
 } from '../engine/autoRouter.js';
 
+export const DEFAULT_CONFIG_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
 export interface EnsureConfigOptions {
   apiKey?: string;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   forceRefresh?: boolean;
+  ttlMs?: number;
 }
 
 /**
@@ -250,6 +253,7 @@ export async function autoAssignAndSaveModels(
  * Ensures a valid configuration exists in ~/.machcode/config.json.
  * Prompts the user on first run if no API key is found, then autonomously
  * scans and assigns active models without prompting.
+ * Automatically synchronizes with NVIDIA Build API if the cached catalog is older than 6 hours.
  */
 export async function ensureConfig(options: EnsureConfigOptions = {}): Promise<MachCodeConfig> {
   let config = await loadConfig();
@@ -260,30 +264,47 @@ export async function ensureConfig(options: EnsureConfigOptions = {}): Promise<M
     config = await saveConfig(apiKey);
   }
 
-  // If models or multi-model racing pools are not configured or a refresh was forced, auto-assign autonomously
+  const apiKeyChanged = Boolean(config?.nvidiaApiKey && apiKey !== config.nvidiaApiKey);
+  const isStale = Boolean(
+    !config?.updatedAt ||
+    Date.now() - new Date(config.updatedAt).getTime() > (options.ttlMs ?? DEFAULT_CONFIG_TTL_MS),
+  );
+
+  // If models or multi-model racing pools are not configured, key changed, cache is stale, or refresh was forced, auto-assign autonomously
   if (
     !config ||
     !config.lightModel ||
     !config.heavyModel ||
     !Array.isArray(config.strongPool) ||
     config.strongPool.length < 2 ||
+    apiKeyChanged ||
+    isStale ||
     options.forceRefresh
   ) {
-    const { lightModel, heavyModel, strongPool, weakPool } = await autoAssignAndSaveModels(
-      apiKey,
-      options.baseUrl,
-      options.fetchImpl,
-    );
-    return {
-      nvidiaApiKey: apiKey,
-      lightModel,
-      heavyModel,
-      strongPool,
-      weakPool,
-      createdAt: config?.createdAt ?? new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    try {
+      const { lightModel, heavyModel, strongPool, weakPool } = await autoAssignAndSaveModels(
+        apiKey,
+        options.baseUrl,
+        options.fetchImpl,
+      );
+      return {
+        nvidiaApiKey: apiKey,
+        lightModel,
+        heavyModel,
+        strongPool,
+        weakPool,
+        createdAt: config?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    } catch {
+      if (config && config.lightModel && config.heavyModel) {
+        return config;
+      }
+    }
   }
 
+  if (!config) {
+    config = await saveConfig(apiKey);
+  }
   return config;
 }
