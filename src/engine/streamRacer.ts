@@ -1,6 +1,12 @@
 import { stdout as output } from 'node:process';
+import chalk from 'chalk';
 import { loadConfig, DEFAULT_API_TIMEOUT_MS } from '../config/index.js';
-import { VERIFIED_STRONG_POOL_MODELS, VERIFIED_WEAK_POOL_MODELS } from './autoRouter.js';
+import {
+  VERIFIED_STRONG_POOL_MODELS,
+  VERIFIED_WEAK_POOL_MODELS,
+  isHeavyTask,
+  isEliteHeavyModel,
+} from './autoRouter.js';
 import { buildSniperSystemPrompt } from '../prompts/sniper.js';
 import { StreamParser, type StreamParseResult } from '../utils/streamParser.js';
 import type { OpenAIToolDefinition } from '../tools/index.js';
@@ -33,6 +39,8 @@ export interface TieredFallbackOptions {
   messages?: ChatMessage[];
   strongPool?: string[];
   weakPool?: string[];
+  isHeavyTask?: boolean;
+  heavyTimeoutMs?: number;
   // Backwards compatibility for existing callers/tests:
   handoffWindowMs?: number;
   onHandoff?: (details: unknown) => void;
@@ -394,9 +402,17 @@ async function executeTier(
 
       (async () => {
         try {
-          if (uniqueModels.length > 1 && model.includes('bolt-e4b')) {
+          // If flash/bolt models are racing against elite heavy models (DeepSeek, Kimi, etc.),
+          // introduce a fair handicap window so reasoning models have time to think and emit!
+          const hasEliteCompetitor = uniqueModels.some(isEliteHeavyModel);
+          const isFlashModel =
+            model.includes('bolt-e4b') ||
+            model.includes('flash') ||
+            model.includes('nano-fast');
+
+          if (uniqueModels.length > 1 && isFlashModel && hasEliteCompetitor) {
             await new Promise<void>((r) => {
-              const t = setTimeout(r, 1800);
+              const t = setTimeout(r, 1600);
               controller.signal.addEventListener(
                 'abort',
                 () => {
@@ -519,19 +535,81 @@ export async function tieredFallback(
   let winnerExecution: TierExecutionResult | null = null;
   let strongError: unknown = null;
 
-  // Step 1 & 2: Primary — Fire to StrongPool
-  try {
-    winnerExecution = await executeTier(strongPool, 'strong', {
-      endpoint,
-      apiKey,
-      systemPrompt,
-      userPrompt: prompt,
-      messages: options.messages,
-      fetchImpl,
-      timeoutMs,
+  // Check if this is a heavy / complex coding or architectural task
+  const isHeavy =
+    options.isHeavyTask ??
+    isHeavyTask(prompt, {
+      mode: options.systemPrompt?.includes('STRICT PLAN-ONLY') ? 'plan' : undefined,
     });
-  } catch (err) {
-    strongError = err;
+
+  const eliteHeavyModels = strongPool.filter(isEliteHeavyModel);
+  const remainingStrongModels = strongPool.filter((m) => !isEliteHeavyModel(m));
+
+  // Step 1: Heavy Task Priority
+  // For complex / heavy tasks, prioritize elite reasoning models (DeepSeek, Kimi, etc.) with a dedicated timeout window
+  if (isHeavy && eliteHeavyModels.length > 0 && remainingStrongModels.length > 0) {
+    const heavyTimeoutMs = options.heavyTimeoutMs ?? Math.min(timeoutMs, 7500);
+    try {
+      if (writeToStdout) {
+        output.write(
+          chalk.magenta.bold(
+            `\n🧠 Ağır/Karmaşık Görev: Öncelikli akıl yürütme modelleri (${eliteHeavyModels.slice(0, 3).join(', ')}) devrede...\n`,
+          ),
+        );
+      }
+      winnerExecution = await executeTier(eliteHeavyModels, 'strong', {
+        endpoint,
+        apiKey,
+        systemPrompt,
+        userPrompt: prompt,
+        messages: options.messages,
+        fetchImpl,
+        timeoutMs: heavyTimeoutMs,
+      });
+    } catch (heavyErr) {
+      // Heavy models timed out or failed -> Seamlessly fall back to remaining models in strong pool!
+      if (writeToStdout) {
+        output.write(
+          chalk.yellow(
+            `\n⚠️  Öncelikli ağır modeller zaman aşımına uğradı (${Math.round(heavyTimeoutMs / 1000)}s). Hızlı alt modellere geçiliyor...\n\n`,
+          ),
+        );
+      }
+      options.onFallback?.(
+        'strong',
+        'weak',
+        `Heavy priority tier timed out or failed (${heavyErr instanceof Error ? heavyErr.message : String(heavyErr)}). Falling back to alternative fast models.`,
+      );
+
+      try {
+        winnerExecution = await executeTier(remainingStrongModels, 'strong', {
+          endpoint,
+          apiKey,
+          systemPrompt,
+          userPrompt: prompt,
+          messages: options.messages,
+          fetchImpl,
+          timeoutMs,
+        });
+      } catch (err) {
+        strongError = err;
+      }
+    }
+  } else {
+    // Standard parallel race across all models in StrongPool
+    try {
+      winnerExecution = await executeTier(strongPool, 'strong', {
+        endpoint,
+        apiKey,
+        systemPrompt,
+        userPrompt: prompt,
+        messages: options.messages,
+        fetchImpl,
+        timeoutMs,
+      });
+    } catch (err) {
+      strongError = err;
+    }
   }
 
   // Step 3: Fallback — IF AND ONLY IF all models in StrongPool fail, fire to WeakPool

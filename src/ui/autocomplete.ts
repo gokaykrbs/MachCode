@@ -414,6 +414,75 @@ export function filterAutocompleteItems(
   return [];
 }
 
+/**
+ * Strips all ANSI escape sequences (CSI, OSC, color codes, mode set/reset).
+ */
+export function stripAnsiCodes(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]|\x1b\].*?(?:\x07|\x1b\\)|\x1b[()][AB012]/g, '');
+}
+
+/**
+ * Calculates visual column width of a character or code point in a terminal emulator.
+ * Supports emojis (✨, ⚡, 💎, 🧛), East Asian wide characters, and zero-width modifiers.
+ */
+export function getCodePointWidth(codePoint: number): number {
+  if (codePoint === 0) return 0;
+  // Control characters
+  if (codePoint < 32 || (codePoint >= 0x7f && codePoint < 0xa0)) return 0;
+  // Combining characters, zero-width spaces, variation selectors
+  if (
+    (codePoint >= 0x0300 && codePoint <= 0x036f) || // Combining Diacritical Marks
+    (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
+    (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
+    (codePoint >= 0x200b && codePoint <= 0x200f) || // Zero-width spaces & marks
+    (codePoint >= 0x202a && codePoint <= 0x202e) || // Directional formatting
+    (codePoint >= 0x2060 && codePoint <= 0x206f) ||
+    (codePoint >= 0xfe00 && codePoint <= 0xfe0f) || // Variation Selectors
+    (codePoint >= 0xe0100 && codePoint <= 0xe01ef)
+  ) {
+    return 0;
+  }
+  // East Asian Wide / Fullwidth / Emojis
+  if (
+    codePoint >= 0x1100 &&
+    (codePoint <= 0x115f || // Hangul Jamo
+      codePoint === 0x2329 ||
+      codePoint === 0x232a ||
+      (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) || // CJK Radicals, Kanji
+      (codePoint >= 0xac00 && codePoint <= 0xd7a3) || // Hangul Syllables
+      (codePoint >= 0xf900 && codePoint <= 0xfaff) || // CJK Compatibility Ideographs
+      (codePoint >= 0xfe10 && codePoint <= 0xfe19) || // Vertical forms
+      (codePoint >= 0xfe30 && codePoint <= 0xfe6f) || // CJK Compatibility Forms
+      (codePoint >= 0xff00 && codePoint <= 0xff60) || // Fullwidth Forms
+      (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+      (codePoint >= 0x20000 && codePoint <= 0x3fffd) ||
+      // Symbols, Dingbats & Emojis (✨ 0x2728, ⚡ 0x26A1, 💎 0x1F48E, 🧛 0x1F9DB, 🤖 0x1F916, etc.)
+      (codePoint >= 0x2600 && codePoint <= 0x27bf) ||
+      (codePoint >= 0x1f000 && codePoint <= 0x1f9ff) ||
+      (codePoint >= 0x1fa00 && codePoint <= 0x1faff))
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
+/**
+ * Accurately measures the visual column width of any string in terminal monospace cells,
+ * taking into account ANSI escape sequences, multi-byte emojis, and fullwidth glyphs.
+ */
+export function getVisualWidth(text: string): number {
+  const clean = stripAnsiCodes(text);
+  let width = 0;
+  for (const char of clean) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint !== undefined) {
+      width += getCodePointWidth(codePoint);
+    }
+  }
+  return width;
+}
+
 export interface PromptWithSuggestionsOptions {
   promptText: string | (() => string);
   items?: AutocompleteItem[];
@@ -470,18 +539,17 @@ export async function promptWithSuggestions(
 
     function clearRenderedBox() {
       if (lastBoxLines > 0) {
-        // Move down line by line and clear each line
-        for (let i = 0; i < lastBoxLines; i++) {
-          stdout.write('\n\x1b[2K');
-        }
-        // Move back up
-        stdout.write(`\x1b[${lastBoxLines}A`);
+        // Clear previous suggestion box downwards from current prompt line
+        stdout.write('\r\x1b[2K\x1b[J');
         lastBoxLines = 0;
       }
     }
 
     function render() {
       clearRenderedBox();
+
+      currentPromptText =
+        typeof options.promptText === 'function' ? options.promptText() : currentPromptText;
 
       // Clear current line and re-render prompt + buffer
       stdout.write(`\r\x1b[2K${currentPromptText}${buffer}`);
@@ -566,9 +634,10 @@ export async function promptWithSuggestions(
         stdout.write(`\x1b[${lastBoxLines}A`);
       }
 
-      // Position terminal cursor at buffer insertion point
-      // eslint-disable-next-line no-control-regex
-      const cursorCol = currentPromptText.replace(/\x1b\[[0-9;]*m/g, '').length + cursor + 1;
+      // Position terminal cursor precisely at buffer insertion point using accurate visual width
+      const promptColWidth = getVisualWidth(currentPromptText);
+      const bufferColWidth = getVisualWidth(buffer.slice(0, cursor));
+      const cursorCol = promptColWidth + bufferColWidth + 1;
       stdout.write(`\r\x1b[${cursorCol}G`);
     }
 
@@ -706,7 +775,9 @@ export async function promptWithSuggestions(
       // Handle Left Arrow
       if (key.name === 'left') {
         if (cursor > 0) {
-          cursor -= 1;
+          const prevCode = buffer.charCodeAt(cursor - 1);
+          const step = prevCode >= 0xdc00 && prevCode <= 0xdfff && cursor >= 2 ? 2 : 1;
+          cursor -= step;
           render();
         }
         return;
@@ -715,7 +786,9 @@ export async function promptWithSuggestions(
       // Handle Right Arrow
       if (key.name === 'right') {
         if (cursor < buffer.length) {
-          cursor += 1;
+          const nextCode = buffer.charCodeAt(cursor);
+          const step = nextCode >= 0xd800 && nextCode <= 0xdbff && cursor + 1 < buffer.length ? 2 : 1;
+          cursor += step;
           render();
         } else {
           // At end of line: can autocomplete current match
@@ -733,8 +806,10 @@ export async function promptWithSuggestions(
       // Handle Backspace
       if (key.name === 'backspace') {
         if (cursor > 0) {
-          buffer = buffer.slice(0, cursor - 1) + buffer.slice(cursor);
-          cursor -= 1;
+          const prevCode = buffer.charCodeAt(cursor - 1);
+          const step = prevCode >= 0xdc00 && prevCode <= 0xdfff && cursor >= 2 ? 2 : 1;
+          buffer = buffer.slice(0, cursor - step) + buffer.slice(cursor);
+          cursor -= step;
           selectedIndex = 0;
           scrollOffset = 0;
           isDismissed = false;
@@ -746,7 +821,9 @@ export async function promptWithSuggestions(
       // Handle Delete
       if (key.name === 'delete') {
         if (cursor < buffer.length) {
-          buffer = buffer.slice(0, cursor) + buffer.slice(cursor + 1);
+          const nextCode = buffer.charCodeAt(cursor);
+          const step = nextCode >= 0xd800 && nextCode <= 0xdbff && cursor + 1 < buffer.length ? 2 : 1;
+          buffer = buffer.slice(0, cursor) + buffer.slice(cursor + step);
           selectedIndex = 0;
           scrollOffset = 0;
           render();
@@ -778,10 +855,12 @@ export async function promptWithSuggestions(
         return;
       }
 
-      // Regular character insertion
-      if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
-        buffer = buffer.slice(0, cursor) + key.sequence + buffer.slice(cursor);
-        cursor += 1;
+      // Regular character insertion (characters, emojis, unicode glyphs, pasted text)
+      const inputStr = _str || key.sequence;
+      // eslint-disable-next-line no-control-regex
+      if (inputStr && !key.ctrl && !key.meta && !/[\x00-\x08\x0a-\x1f\x7f]/.test(inputStr)) {
+        buffer = buffer.slice(0, cursor) + inputStr + buffer.slice(cursor);
+        cursor += inputStr.length;
         selectedIndex = 0;
         scrollOffset = 0;
         isDismissed = false;

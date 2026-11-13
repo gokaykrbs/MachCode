@@ -5,7 +5,11 @@ import { stdin as input, stdout as output } from 'node:process';
 import chalk from 'chalk';
 import ora from 'ora';
 import { autoAssignAndSaveModels, ensureConfig } from './config/index.js';
-import { VERIFIED_STRONG_POOL_MODELS, VERIFIED_WEAK_POOL_MODELS } from './engine/autoRouter.js';
+import {
+  VERIFIED_STRONG_POOL_MODELS,
+  VERIFIED_WEAK_POOL_MODELS,
+  isHeavyTask,
+} from './engine/autoRouter.js';
 import {
   executeParsedCode,
   type ConfirmWriteDecision,
@@ -728,8 +732,13 @@ export async function runMachCode(
       uniqueProviders.length > 5
         ? `${uniqueProviders.slice(0, 5).join(', ')} +${uniqueProviders.length - 5} more`
         : uniqueProviders.join(', ');
-    const spinnerText =
-      activeStrongPool.length > 1
+    const isHeavy = isHeavyTask(currentPrompt, {
+      mode: options.readOnly ? 'plan' : undefined,
+      subagent: options.subagent?.id,
+    });
+    const spinnerText = isHeavy
+      ? `Ağır görev: Öncelikli akıl yürütme modelleri (DeepSeek / Kimi) devreye alınıyor...`
+      : activeStrongPool.length > 1
         ? `Racing ${activeStrongPool.length} models in parallel (${providerList})...`
         : `Connecting to model (${activeStrongPool[0] ?? heavyModel})...`;
 
@@ -752,6 +761,7 @@ export async function runMachCode(
         }),
         strongPool: activeStrongPool,
         weakPool: activeWeakPool,
+        isHeavyTask: isHeavy,
         handoffWindowMs: options.handoffWindowMs,
         timeoutMs: options.timeoutMs,
         writeToStdout: false,
@@ -897,6 +907,7 @@ export async function runMachCode(
         tools: toolsLoaded,
         strongPool: activeStrongPool,
         weakPool: activeWeakPool,
+        isHeavyTask: isHeavyTask(currentPrompt),
         handoffWindowMs: options.handoffWindowMs,
         timeoutMs: options.timeoutMs,
         writeToStdout,

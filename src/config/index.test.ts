@@ -5,6 +5,8 @@ import {
   autoRouteModels,
   extractModelParamCount,
   isUsableGenerativeModel,
+  isHeavyTask,
+  isEliteHeavyModel,
 } from '../engine/autoRouter.js';
 
 describe('AutoRouter & Autonomous Model Routing', () => {
@@ -172,5 +174,46 @@ describe('Dynamic Model Fetching & Configuration', () => {
         return true;
       },
     );
+  });
+
+  it('isHeavyTask detects heavy keywords, subagent roles, and prompt complexity', () => {
+    // Turkish keywords
+    assert.equal(isHeavyTask('Bu çok ağır ve karmaşık bir mimari görev'), true);
+    assert.equal(isHeavyTask('Tüm sistemi baştan yazıp refactor et'), true);
+    assert.equal(isHeavyTask('Kapsamlı güvenlik ve performans optimizasyonu yap'), true);
+    assert.equal(isHeavyTask('Algoritmayı çözümle ve optimize et'), true);
+
+    // English keywords
+    assert.equal(isHeavyTask('Design a scalable distributed architecture'), true);
+    assert.equal(isHeavyTask('Deep refactoring with zero downtime'), true);
+
+    // Model name triggers
+    assert.equal(isHeavyTask('Use deepseek to write this logic'), true);
+    assert.equal(isHeavyTask('kimi ile bu sorunu çöz'), true);
+
+    // Subagents / Modes
+    assert.equal(isHeavyTask('simple prompt', { subagent: 'architect' }), true);
+    assert.equal(isHeavyTask('simple prompt', { mode: 'plan' }), true);
+
+    // Simple prompts -> false
+    assert.equal(isHeavyTask('merhaba'), false);
+    assert.equal(isHeavyTask('saat kaç?'), false);
+    assert.equal(isHeavyTask('hello world'), false);
+  });
+
+  it('isEliteHeavyModel accurately identifies frontier reasoning and heavy models', () => {
+    assert.equal(isEliteHeavyModel('moonshotai/kimi-k2.6'), true);
+    assert.equal(isEliteHeavyModel('deepseek-ai/deepseek-r1'), true);
+    assert.equal(isEliteHeavyModel('deepseek-ai/deepseek-coder-33b-instruct'), true);
+    assert.equal(isEliteHeavyModel('qwen/qwen2.5-coder-32b-instruct'), true);
+    assert.equal(isEliteHeavyModel('nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'), true);
+    assert.equal(isEliteHeavyModel('meta/codellama-70b'), true);
+    assert.equal(isEliteHeavyModel('meta/llama-3.1-405b-instruct'), true);
+
+    // Flash/small models must NOT be elite heavy models
+    assert.equal(isEliteHeavyModel('minimaxai/minimax-m3.1-flash'), false);
+    assert.equal(isEliteHeavyModel('nvidia/nemotron-3.5-bolt-e4b'), false);
+    assert.equal(isEliteHeavyModel('deepseek-ai/deepseek-coder-6.7b-instruct'), false);
+    assert.equal(isEliteHeavyModel('openai/gpt-oss-20b'), false);
   });
 });

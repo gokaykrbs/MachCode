@@ -32,12 +32,15 @@ export interface AutoRouterOptions {
  * so multi-model racing genuinely competes across distinct AI providers.
  */
 export const VERIFIED_STRONG_POOL_MODELS: readonly string[] = [
-  'minimaxai/minimax-m3.1-flash',
-  'google/diffusiongemma-26b-a4b-it',
-  'openai/gpt-oss-20b',
-  'nvidia/nemotron-3.5-super-vl-120b-a12b',
+  'moonshotai/kimi-k2.6',
+  'deepseek-ai/deepseek-r1',
+  'deepseek-ai/deepseek-coder-6.7b-instruct',
+  'qwen/qwen2.5-coder-32b-instruct',
   'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
-  'nvidia/nemotron-3.5-lightning-30b-a3b',
+  'meta/llama-3.1-405b-instruct',
+  'nvidia/nemotron-3.5-super-vl-120b-a12b',
+  'meta/codellama-70b',
+  'mistralai/mistral-large-2-instruct',
 ];
 
 export const VERIFIED_WEAK_POOL_MODELS: readonly string[] = [
@@ -88,16 +91,28 @@ export function extractModelParamCount(id: string): number | null {
 
 /**
  * Determines whether a model qualifies for the StrongPool:
+ * - Deep reasoning / thinking models (e.g. Kimi, DeepSeek R1/V3/33B, Qwen Coder, R1, O1)
  * - Parameter count >= 30B
- * - Deep reasoning / thinking models (e.g. contains 'reason', 'r1', 'o1')
  * - Ultra, super, or large foundation models
  */
 export function isStrongModel(id: string): boolean {
   const lower = id.toLowerCase();
+  const param = extractModelParamCount(lower);
+
+  // Explicitly small parameter counts (< 15B) are lightweight models (e.g. 6.7b, 7b, 8b)
+  if (param !== null && param < 15) {
+    return false;
+  }
+
   if (
+    lower.includes('kimi') ||
+    lower.includes('moonshot') ||
+    lower.includes('deepseek-r1') ||
+    lower.includes('deepseek-v3') ||
+    lower.includes('deepseek-coder-33b') ||
+    lower.includes('deepseek') ||
     lower.includes('reason') ||
     lower.includes('r1') ||
-    lower.includes('deepseek-r1') ||
     lower.includes('o1') ||
     lower.includes('ultra') ||
     lower.includes('super')
@@ -105,7 +120,6 @@ export function isStrongModel(id: string): boolean {
     return true;
   }
 
-  const param = extractModelParamCount(lower);
   if (param !== null) {
     return param >= 30;
   }
@@ -118,6 +132,135 @@ export function isStrongModel(id: string): boolean {
     lower.includes('32b') ||
     lower.includes('large')
   ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Determines whether a model is an elite frontier reasoning / heavy coding model
+ * (DeepSeek R1/V3/33B, Kimi/Moonshot, Qwen Coder, 70B+ reasoning foundations).
+ */
+export function isEliteHeavyModel(id: string): boolean {
+  const lower = id.toLowerCase();
+  const param = extractModelParamCount(lower);
+  if (param !== null && param < 15) {
+    return false;
+  }
+  if (
+    lower.includes('flash') ||
+    lower.includes('bolt-e4b') ||
+    lower.includes('nano-fast') ||
+    lower.includes('guard')
+  ) {
+    return false;
+  }
+  return (
+    lower.includes('kimi') ||
+    lower.includes('moonshot') ||
+    lower.includes('deepseek') ||
+    lower.includes('reason') ||
+    lower.includes('r1') ||
+    lower.includes('qwen2.5-coder') ||
+    lower.includes('codellama-70b') ||
+    lower.includes('nemotron-3-nano-omni') ||
+    lower.includes('nemotron-3.5-super') ||
+    lower.includes('405b') ||
+    lower.includes('340b') ||
+    (lower.includes('70b') && (lower.includes('coder') || lower.includes('instruct')))
+  );
+}
+
+/**
+ * Analyzes instruction prompt, subagent context, and mode to determine
+ * whether a task is heavy/complex requiring deep reasoning and frontier coding capability.
+ */
+export function isHeavyTask(
+  prompt: string,
+  options?: { mode?: string; subagent?: string; isExplicitHeavy?: boolean },
+): boolean {
+  if (options?.isExplicitHeavy) return true;
+  if (
+    options?.subagent &&
+    ['architect', 'coder', 'reviewer'].includes(options.subagent.toLowerCase())
+  ) {
+    return true;
+  }
+  if (options?.mode === 'plan') return true;
+
+  const lower = prompt.toLowerCase();
+
+  // Explicit model requests in prompt
+  if (
+    lower.includes('deepseek') ||
+    lower.includes('kimi') ||
+    lower.includes('moonshot') ||
+    lower.includes('r1')
+  ) {
+    return true;
+  }
+
+  // Heavy task keywords (Turkish and English)
+  const heavyKeywords = [
+    // Turkish keywords
+    'ağır',
+    'agir',
+    'karmaşık',
+    'karmasik',
+    'zor',
+    'mimari',
+    'refactor',
+    'yeniden yapılandır',
+    'yeniden yapilandir',
+    'sıfırdan',
+    'sifirdan',
+    'algoritma',
+    'derin',
+    'güvenlik',
+    'guvenlik',
+    'optimizasyon',
+    'baştan yaz',
+    'bastan yaz',
+    'analiz et',
+    'tasarla',
+    'çözümle',
+    'cozumle',
+    'hata ayıkla',
+    'hata ayikla',
+    'kapsamlı',
+    'kapsamli',
+    'ölçeklenebilir',
+    'olceklenebilir',
+    // English keywords
+    'heavy',
+    'complex',
+    'architecture',
+    'refactor',
+    'rewrite',
+    'optimize',
+    'optimization',
+    'security',
+    'vulnerability',
+    'algorithm',
+    'implement from scratch',
+    'comprehensive',
+    'debug',
+    'concurrency',
+    'race condition',
+    'deadlock',
+    'scalability',
+    'distributed',
+    'benchmark',
+  ];
+
+  if (heavyKeywords.some((kw) => lower.includes(kw))) {
+    return true;
+  }
+
+  // Complex prompt structure: large token/word count or multiline code
+  const words = prompt.trim().split(/\s+/).length;
+  if (words >= 60 || prompt.length >= 400 || (prompt.includes('```') && prompt.length >= 200)) {
     return true;
   }
 
@@ -146,9 +289,20 @@ export function scoreModelRole(id: string, role: 'light' | 'heavy'): number {
     score += 30;
   }
   // Renowned foundation model families for coding/reasoning
+  if (lower.includes('kimi') || lower.includes('moonshot')) {
+    score += role === 'heavy' ? 180 : 10;
+  }
+  if (lower.includes('deepseek')) {
+    score += role === 'heavy' ? 80 : 20;
+  }
+  if (lower.includes('qwen')) {
+    score += role === 'heavy' ? 50 : 15;
+  }
+  if (lower.includes('reason') || lower.includes('r1') || lower.includes('o1')) {
+    score += role === 'heavy' ? 90 : -30;
+  }
   if (
     lower.includes('llama') ||
-    lower.includes('deepseek') ||
     lower.includes('mistral') ||
     lower.includes('granite') ||
     lower.includes('gemma')
@@ -178,6 +332,15 @@ export function scoreModelRole(id: string, role: 'light' | 'heavy'): number {
       score += 50;
     }
   } else {
+    // Heavy role: penalize flash/mini/nano models so they don't hijack heavyModel!
+    if (
+      lower.includes('flash') ||
+      lower.includes('mini') ||
+      lower.includes('nano-fast') ||
+      lower.includes('bolt-e4b')
+    ) {
+      score -= 60;
+    }
     // Look for larger parameter counts (e.g. 30b, 32b, 34b, 70b, 90b, 405b, large)
     if (lower.includes('large') || lower.includes('ultra') || lower.includes('super')) {
       score += 30;
@@ -242,22 +405,21 @@ export function categorizeModels(
     (a, b) => scoreModelRole(b, 'light') - scoreModelRole(a, 'light'),
   );
 
-  // If the full live NVIDIA NIM catalog was fetched (contains verified active endpoints),
-  // include ALL usable generative models from the API key so every single model races in parallel!
+  // Put sorted heavy models FIRST so frontier reasoning models lead the race!
   const allUsableOrdered = Array.from(
     new Set([
-      ...verifiedStrongPresent,
       ...sortedStrong,
+      ...verifiedStrongPresent,
       ...sortedWeak.filter((m) => !m.includes('bolt-e4b')),
       ...sortedWeak.filter((m) => m.includes('bolt-e4b')),
     ]),
   );
 
   const rawStrongPool =
-    verifiedStrongPresent.length >= 2
+    sortedStrong.length > 0
       ? allUsableOrdered
-      : sortedStrong.length > 0
-        ? sortedStrong
+      : verifiedStrongPresent.length > 0
+        ? verifiedStrongPresent
         : VERIFIED_STRONG_POOL_MODELS.filter((m) => !excludeSet.has(m));
 
   const rawWeakPool =

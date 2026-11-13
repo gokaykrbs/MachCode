@@ -305,4 +305,67 @@ describe('Tiered Priority Fallback Engine (tieredFallback / raceModels)', () => 
       },
     );
   });
+
+  it('prioritizes heavy reasoning models (DeepSeek / Kimi) for heavy tasks', async () => {
+    const recordedRequests: Array<{ url: string; model: string; stream: boolean }> = [];
+    const HEAVY_MODEL = 'deepseek-ai/deepseek-r1';
+    const FAST_MODEL = 'minimaxai/minimax-m3.1-flash';
+
+    const mockFetch = createMockNimFetch(
+      {
+        [HEAVY_MODEL]: [{ delayMs: 25, content: '```ts\nexport const deepseekLogic = true;\n```' }],
+        [FAST_MODEL]: [{ delayMs: 5, content: '```ts\nexport const flashLogic = false;\n```' }],
+      },
+      recordedRequests,
+    );
+
+    const result = await tieredFallback(
+      'Ağır ve karmaşık mimari algoritma tasarımı',
+      undefined,
+      undefined,
+      {
+        apiKey: 'nvapi-test-key',
+        strongPool: [HEAVY_MODEL, FAST_MODEL],
+        writeToStdout: false,
+        debugLogPath: null,
+        fetchImpl: mockFetch,
+      },
+    );
+
+    // DeepSeek wins because heavy priority was granted
+    assert.equal(result.winnerModel, HEAVY_MODEL);
+    assert.equal(result.parseResult.extractedCode, 'export const deepseekLogic = true;');
+  });
+
+  it('falls back to fast models when heavy priority models time out or fail', async () => {
+    const recordedRequests: Array<{ url: string; model: string; stream: boolean }> = [];
+    const HEAVY_MODEL = 'moonshotai/kimi-k2.6';
+    const FAST_MODEL = 'minimaxai/minimax-m3.1-flash';
+
+    const mockFetch = createMockNimFetch(
+      {
+        [HEAVY_MODEL]: { errorStatus: 504, errorBody: 'Gateway Timeout' },
+        [FAST_MODEL]: [{ delayMs: 10, content: '```ts\nexport const fastFallback = true;\n```' }],
+      },
+      recordedRequests,
+    );
+
+    const result = await tieredFallback(
+      'Ağır ve zor refactoring görevi',
+      undefined,
+      undefined,
+      {
+        apiKey: 'nvapi-test-key',
+        strongPool: [HEAVY_MODEL, FAST_MODEL],
+        heavyTimeoutMs: 100,
+        writeToStdout: false,
+        debugLogPath: null,
+        fetchImpl: mockFetch,
+      },
+    );
+
+    // When Kimi fails / times out, automatically falls back to fast model
+    assert.equal(result.winnerModel, FAST_MODEL);
+    assert.equal(result.parseResult.extractedCode, 'export const fastFallback = true;');
+  });
 });

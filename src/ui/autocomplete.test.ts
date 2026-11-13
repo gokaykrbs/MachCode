@@ -1,7 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAutocompleteItems, filterAutocompleteItems } from './autocomplete.js';
+import {
+  buildAutocompleteItems,
+  filterAutocompleteItems,
+  getVisualWidth,
+  stripAnsiCodes,
+} from './autocomplete.js';
 import { resolveSkillByName } from '../commands/skills.js';
+import chalk from 'chalk';
 
 describe('Autocomplete & Skills Suggestion System', () => {
   it('builds comprehensive list of slash commands and official NVIDIA Agent Skills', () => {
@@ -68,5 +74,33 @@ describe('Autocomplete & Skills Suggestion System', () => {
     assert.equal(deepstream.product, 'DeepStream');
 
     assert.equal(resolveSkillByName('unknown_fake_skill'), null);
+  });
+
+  it('accurately calculates visual terminal width for synchronized cursor positioning', () => {
+    // 1. Default prompt with Sparkles emoji ✨ (double width in monospace terminal)
+    const defaultPrompt = `${chalk.cyan.bold('[machcode✨]')} ${chalk.yellow('>')} `;
+    const cleanDefault = stripAnsiCodes(defaultPrompt);
+    assert.equal(cleanDefault, '[machcode✨] > ');
+    // Raw UTF-16 length is 14, but visual display width is 15 columns
+    assert.equal(cleanDefault.length, 14);
+    assert.equal(getVisualWidth(defaultPrompt), 15);
+
+    // 2. Plan mode prompt with Sparkles emoji ✨
+    const planPrompt = `${chalk.cyan.bold('[machcode✨')} ${chalk.magenta.bold('(plan)')}${chalk.cyan.bold(']')} ${chalk.yellow('>')} `;
+    assert.equal(getVisualWidth(planPrompt), 22);
+
+    // 3. Various themes with emojis & glyphs
+    assert.equal(getVisualWidth('[machcode🧛] ❯ '), 16);
+    assert.equal(getVisualWidth('[machcode⚡] ❯ '), 16);
+    assert.equal(getVisualWidth('[machcode💎] ❯ '), 16);
+    assert.equal(getVisualWidth('[machcode] > '), 13);
+
+    // 4. Standard Latin & Turkish characters
+    assert.equal(getVisualWidth('hello world'), 11);
+    assert.equal(getVisualWidth('Türkçe metin çalıştırma'), 23);
+
+    // 5. Emojis and combined text
+    assert.equal(getVisualWidth('✨🚀🤖'), 6);
+    assert.equal(getVisualWidth('test✨123'), 9);
   });
 });
