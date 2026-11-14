@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/machcode"><img src="https://img.shields.io/npm/v/machcode.svg?style=flat-square&color=cb3837&logo=npm" alt="npm version" /></a>
   <a href="https://github.com/gokaykrbs/MachCode/releases"><img src="https://img.shields.io/badge/version-v0.1.0-blue.svg?style=flat-square" alt="version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
   <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-110%2F110%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
@@ -50,7 +51,11 @@ Instead of relying on a single AI model that might be slow or temporarily down, 
 Install MachCode globally using `npm` (or `pnpm`):
 
 ```bash
+# Global installation via npm:
 npm install -g machcode
+
+# Or run instantly without installation:
+npx machcode
 ```
 
 *(Or clone and build from source: `git clone https://github.com/gokaykrbs/MachCode.git && cd MachCode && pnpm install && pnpm run build && npm link`)*
@@ -274,3 +279,12 @@ Yes. Press `Tab` or type `/mode plan` to enter **Plan Mode**. In this mode, Mach
 
 MachCode is free and open-source software distributed under the **[MIT License](LICENSE)**.
 Contributions, bug reports, and suggestions are welcome! Check out [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
+
+---
+
+## ⚖️ Disclaimer
+
+**MachCode** is an independent, community-driven open-source project and is **not affiliated with, endorsed by, sponsored by, or officially associated with NVIDIA Corporation**.
+
+- NVIDIA®, NVIDIA NIM™, and related logos and brand marks are trademarks or registered trademarks of NVIDIA Corporation in the United States and other countries.
+- All other trademarks, model identifiers, product names, and company logos mentioned in this project belong to their respective copyright and trademark holders.

@@ -6,8 +6,8 @@
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "bin": {
-    "mach": "./dist/bin/machcode.js",
-    "machcode": "./dist/bin/machcode.js"
+    "mach": "dist/bin/machcode.js",
+    "machcode": "dist/bin/machcode.js"
   },
   "files": [
     "dist"
@@ -39,7 +39,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/gokaykrbs/MachCode.git"
+    "url": "git+https://github.com/gokaykrbs/MachCode.git"
   },
   "bugs": {
     "url": "https://github.com/gokaykrbs/MachCode/issues"

@@ -50,7 +50,11 @@ Geleneksel araçlar gibi tek bir yapay zeka modeline takılıp kalmak yerine Mac
 MachCode'u terminalinizden tek komutla kurun:
 
 ```bash
+# npm ile global kurulum:
 npm install -g machcode
+
+# veya kurmadan doğrudan çalıştırmak için:
+npx machcode
 ```
 
 *(Veya kaynak koddan kurmak isterseniz: `git clone https://github.com/gokaykrbs/MachCode.git && cd MachCode && pnpm install && pnpm run build && npm link`)*
@@ -279,3 +283,12 @@ Evet. `Tab` tuşuna basarak veya `/mode plan` yazarak **Plan Modu**'na geçebili
 
 MachCode, **[MIT Lisansı](LICENSE)** altında sunulan ücretsiz ve açık kaynaklı bir yazılımdır.
 Katkıda bulunmak ve topluluk kuralları için [CONTRIBUTING.md](CONTRIBUTING.md) dosyasını inceleyebilirsiniz.
+
+---
+
+## ⚖️ Yasal Uyarı (Disclaimer)
+
+**MachCode**, bağımsız ve topluluk odaklı bir açık kaynak projesidir; **NVIDIA Corporation ile herhangi bir resmi ortaklığı, sponsorluğu veya resmi bağı bulunmamaktadır**.
+
+- NVIDIA®, NVIDIA NIM™ ve ilgili tüm marka ve logolar NVIDIA Corporation'ın tescilli ticari markalarıdır.
+- Projede bahsi geçen tüm diğer ticari markalar, model isimleri ve şirket unvanları ilgili hak sahiplerine aittir.
