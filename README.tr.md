@@ -1,8 +1,8 @@
-# ⚡ MachCode Kullanım Kılavuzu & Dokümantasyon
+# ⚡ MachCode Kullanım Kılavuzu
 
 <p align="center">
-  <strong>NVIDIA NIM Destekli Paralel Akış Yarıştırmalı (Streaming Racing) Yapay Zeka Kodlama ve Soru-Cevap Terminali</strong><br />
-  <em>Antigravity / Claude Code / OpenCode standardında, 57+ NVIDIA NIM modeliyle (21+ AI sağlayıcısı) eşzamanlı yarışan, çift modlu (Plan & Build), cerrahi kod düzenleme ve geri alma yeteneklerine sahip açık kaynak CLI.</em>
+  <strong>Terminaliniz İçin Ultra Hızlı, Çoklu Model Destekli Yapay Zeka Kodlama Asistanı</strong><br />
+  <em>NVIDIA NIM altyapısıyla güçlendirildi. Yavaş API kuyruklarında beklememeniz için en iyi modelleri aynı anda yarıştırır. Çift modlu çalışma (Plan & Build), cerrahi kod düzenleme ve anında geri alma (undo) yetenekleri içerir.</em>
 </p>
 
 <p align="center">
@@ -12,338 +12,270 @@
 <p align="center">
   <a href="https://github.com/gokaykrbs/MachCode/releases"><img src="https://img.shields.io/badge/version-v0.1.0-blue.svg?style=flat-square" alt="version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
-  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-109%2F109%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-110%2F110%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
   <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-57%2B%20Models-76B900.svg?style=flat-square&logo=nvidia" alt="NVIDIA NIM" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.6%20Strict-blue.svg?style=flat-square&logo=typescript" alt="TypeScript" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.6-blue.svg?style=flat-square&logo=typescript" alt="TypeScript" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/CLI-Global%20Binary-cyan.svg?style=flat-square" alt="CLI" /></a>
 </p>
 
 ---
 
-## 📑 İçindekiler
-1. [Giriş ve Mimari Felsefe](#-giriş-ve-mimari-felsefe)
-2. [Kurulum ve Hızlı Başlangıç](#-kurulum-ve-hızlı-başlangıç)
-3. [Çalışma Modları: Plan & Build](#-çalışma-modları-plan--build)
-4. [Paralel Model Yarışı (Streaming Racing) ve Adil Dengeleme](#-paralel-model-yarışı-streaming-racing-ve-adil-dengeleme)
-5. [Model Seçimi ve Yönlendirme Komutları](#-model-seçimi-ve-yönlendirme-komutları)
-6. [NVIDIA Uzman Alt Ajanları (Subagents)](#-nvidia-uzman-alt-ajanları-subagents)
-7. [Cerrahi Kod Düzenleme, Onay Kapısı ve Geri Alma (Snapshot)](#-cerrahi-kod-düzenleme-onay-kapısı-ve-geri-alma-snapshot)
-8. [Oturum Yönetimi & Dayanıklılık (Sessions)](#-oturum-yönetimi--dayanıklılık-sessions)
-9. [NVIDIA Resmi Ajan Becerileri ve MCP Köprüsü](#-nvidia-resmi-ajan-becerileri-ve-mcp-köprüsü)
-10. [Tüm Slash (/) Komutları Referansı](#-tüm-slash--komutları-referansı)
-11. [Sıkça Sorulan Sorular & Sorun Giderme](#-sıkça-sorulan-sorular--sorun-giderme)
+## 📖 MachCode Nedir?
 
----
+**MachCode**, geliştiriciler için hız, güvenlik ve hassasiyet odaklı tasarlanmış açık kaynaklı, terminal tabanlı bir yapay zeka kodlama asistanıdır.
 
-## 💡 Giriş ve Mimari Felsefe
-
-Geleneksel terminal kodlama araçları tek bir modele (örneğin sadece Claude veya sadece GPT-4) bağlı kalır. Bu durum API kuyruk gecikmelerine, soğuk başlangıç (cold start) beklemelerine ve modelin halüsinasyon riskine yol açar.
-
-**MachCode**, doğrudan **NVIDIA Build (NIM)** altyapısına bağlanır ve API anahtarınızdaki tüm üretken modelleri (Moonshot Kimi K3.1/K2.6, DeepSeek R1/V3, Qwen 2.5 Coder 32B, Meta Llama 3.1 405B, NVIDIA Nemotron 70B/340B ve 20'den fazla küresel sağlayıcı) aynı anda paralel akış yarışına (**Streaming Handoff Racing**) sokar.
+Geleneksel araçlar gibi tek bir yapay zeka modeline takılıp kalmak yerine MachCode, **NVIDIA Build (NIM)** üzerinden onlarca lider üretken yapay zeka modeline (DeepSeek, Kimi, Llama 3.1, Qwen Coder, Mistral, Nemotron vb.) aynı anda istek gönderir. **İlk geçerli cevabı üreten model yarışı kazanır**, diğerleri anında iptal edilir. Böylece API kuyruklarında veya sunucu gecikmelerinde hiç beklemeden ışık hızında yanıt alırsınız.
 
 ```text
-                             Kullanıcı İstemi / Görev
-                                        │
-                                        ▼
-             [Paralel Model Yarışı: StrongPool (57+ NVIDIA NIM Modeli)]
-    (Moonshot Kimi K3.1, DeepSeek R1, Qwen Coder, Llama 3.1 405B, Nemotron...)
-                                        │
-         ┌──────────────────────────────┴──────────────────────────────┐
-         │ İlk Model Gerçek İçerik Token'ı Üretir (200 OK)             │ Hata / 10s Timeout
-         ▼                                                             ▼
-[Anında Kilitlenme & Temiz Akış]                             [WeakPool Yedek Yarışı]
-• Düşünce zincirini <plan> içine alır                        • Hızlı modellerle yedek yarış
-• Kazanan modele kilitlenir ve ekrana basar                  • Kullanıcı asla cevapsız kalmaz
-• Kalan 56 asılı HTTP akışını anında iptal (abort) eder
+                     Kullanıcı İstemi / Görev
+                                │
+                                ▼
+        [Mevcut Tüm Modeller Arasında Paralel Yarış]
+      (DeepSeek, Kimi, Llama 3.1, Qwen Coder, Nemotron...)
+                                │
+        ┌───────────────────────┴───────────────────────┐
+        │ İlk Model Gerçek Cevap Token'ını Üretir       │ Ağ / Timeout Durumu
+        ▼                                               ▼
+[Anında Kilitlenme & Akış]                    [Yedek Hızlı Model Havuzu]
+• En hızlı cevap veren modele kilitlenir      • Anında yedek modeller devreye girer
+• Kalan akışları iptal eder                   • Asla cevapsız veya askıda kalmazsınız
+• Terminalinize temiz şekilde basar
 ```
 
 ---
 
-## 📦 Kurulum ve Hızlı Başlangıç
+## 🚀 60 Saniyede Hızlı Başlangıç
 
-### Ön Gereksinimler
-- **Node.js**: `v18.0.0` veya üstü (v20+ önerilir)
-- **Paket Yöneticisi**: `npm` veya `pnpm`
-- **NVIDIA Build API Anahtarı**: [NVIDIA Build](https://build.nvidia.com) adresinden ücretsiz temin edebilirsiniz (`nvapi-...`).
+### 1. Kurulum
+MachCode'u terminalinizden tek komutla kurun:
 
-### 1. Global Kurulum
 ```bash
-# NPM ile doğrudan kurulum
 npm install -g machcode
-
-# Veya kaynak koddan kurulum
-git clone https://github.com/gokaykrbs/MachCode.git
-cd MachCode
-pnpm install
-pnpm run build
-pnpm link --global
 ```
 
-### 2. API Anahtarını Yapılandırma
-MachCode'u herhangi bir terminalden `mach` veya `machcode` yazarak başlatın:
+*(Veya kaynak koddan kurmak isterseniz: `git clone https://github.com/gokaykrbs/MachCode.git && cd MachCode && pnpm install && pnpm run build && npm link`)*
+
+### 2. Çalıştırma
+Herhangi bir proje klasörünüzde terminale `mach` yazın:
 
 ```bash
 mach
 ```
 
-İlk açılışta API anahtarınız yoksa interaktif olarak sorulur ve `~/.machcode/config.json` dosyasına kaydedilir. Alternatif yöntemler:
-```bash
-# Yöntem A: Terminal içerisinden yapılandırma
-mach> /config key nvapi-your-key-here
-
-# Yöntem B: Çevre değişkeni tanımlama
-export NVIDIA_API_KEY="nvapi-your-key-here"  # Linux / macOS
-$env:NVIDIA_API_KEY="nvapi-your-key-here"     # Windows PowerShell
-
-# Yöntem C: .env dosyası
-cp .env.example .env
-```
+### 3. Ücretsiz API Anahtarınızı Tanımlayın
+MachCode ilk açılışta sizden NVIDIA Build API anahtarınızı ister.
+- **[build.nvidia.com](https://build.nvidia.com)** adresinden ücretsiz hesap açıp hemen bir API anahtarı (`nvapi-...`) alabilirsiniz.
+- Dilerseniz çevre değişkeni olarak da tanımlayabilirsiniz:
+  ```bash
+  export NVIDIA_API_KEY="nvapi-anahtariniz"     # macOS / Linux
+  $env:NVIDIA_API_KEY="nvapi-anahtariniz"        # Windows PowerShell
+  ```
 
 ---
 
-## 🔄 Çalışma Modları: Plan & Build
+## 🧭 Temel Kavramlar: MachCode Nasıl Çalışır?
 
-MachCode iki temel işletim moduna sahiptir. Modlar arasında geçiş yapmak için `Tab` tuşuna basabilir veya `/mode` komutunu kullanabilirsiniz:
+### 1. Çift Çalışma Modu: Plan & Build
+Klavyenizden `Tab` tuşuna basarak veya `/mode` yazarak dilediğiniz an modlar arasında geçiş yapabilirsiniz:
 
-```
-[PLAN]  --> Salt Okunur Güvenli Mod: Dosyalara dokunmaz, sistemde komut çalıştırmaz.
-[BUILD] --> Tam Yetkili Ajan Modu: Dosya oluşturur, cerrahi diff uygular, test koşturur.
-```
-
-### 1. Plan Modu (`/mode plan` veya `Tab`)
-- **Amacı**: Kod tabanını analiz etmek, mimari tasarlamak veya güvenli soru-cevap yapmak.
-- Ajan sadece `read_file`, `list_directory`, `glob` ve `grep` araçlarını kullanabilir.
-- Asla dosyalarda değişiklik yapmaz ve kabuk (shell) komutu çalıştırmaz.
-
-### 2. Build Modu (`/mode build` veya `Tab`)
-- **Amacı**: Özellik geliştirmek, hata ayıklamak, test yazmak ve dosyaları cerrahi olarak düzenlemek.
-- Ajan `edit_file`, `write_file`, `apply_diff` ve `run_command` araçlarını kullanabilir.
-- Yapılacak her değişiklik öncesinde diff önizleme kartı gösterilir.
+| Mod | Ne Yapar? | Ne Zaman Kullanılır? |
+| :--- | :--- | :--- |
+| **`[PLAN]`** | **Salt Okunur / Güvenli:** Dosyalara dokunmaz, sistemde komut çalıştırmaz. Kod tabanını analiz eder ve plan çıkarır. | Yeni bir projeyi incelerken, mimari tasarlarken veya genel soru sorarken. |
+| **`[BUILD]`** | **Aktif Ajan:** Dosyaları okur, cerrahi olarak düzenler, test koşturur ve izin dahilinde terminal komutu çalıştırır. | Kod yazarken, hata düzeltirken (bug fix) ve yeni özellik eklerken. |
 
 ---
 
-## 🏎️ Paralel Model Yarışı (Streaming Racing) ve Adil Dengeleme
+### 2. İnsan Onaylı Güvenlik & Diff Önizleme
+Kontrol her zaman sizdedir. MachCode bir dosyayı değiştirmeden veya yeni bir dosya oluşturmadan önce terminalde satır bazlı renkli bir diff kartı gösterir:
 
-### Havuz Mimarisi: StrongPool ve WeakPool
-- **StrongPool (Güçlü/Akıl Yürüten Modeller):** `moonshotai/kimi-k3.1`, `moonshotai/kimi-k2.6`, `deepseek-ai/deepseek-r1`, `qwen/qwen2.5-coder-32b-instruct`, `meta/llama-3.1-405b-instruct`, `nvidia/nemotron-4-340b-instruct` gibi 30B+ parametreli veya derin muhakeme yapan modeller.
-- **WeakPool (Ultra Hızlı / Yedek Modeller):** `poolside/laguna-xs-2.1`, `minimaxai/minimax-m3.1-flash`, `openai/gpt-oss-20b`, `nvidia/nemotron-3.5-bolt-e4b`.
+```text
+══════════════════════════════════════════════════════════════════
+  DOSYA DÜZENLEME TEKLİFİ: src/server.ts (+2 / -1 satır)
+══════════════════════════════════════════════════════════════════
+  @@ -15,3 +15,4 @@
+  - const port = 3000;
+  + const port = process.env.PORT || 8080;
+  + console.log(`Sunucu ${port} portunda çalışıyor`);
 
-### Adil Dengeleme ve Handikap Mekanizması
-Düşünce modelleri (`Kimi K3.1`, `DeepSeek R1`) token üretmeden önce derin akıl yürütme (`reasoning_content`) yapar. MachCode bu düşünceleri terminale sızdırmamak için arka planda tamponlar. 
+[Y]es (uygula) / [n]o (reddet) / [a]ll (tümünü onayla) / [d]iff (tamamını gör) ?
+```
 
-Ultra küçük modellerin (`poolside/laguna-xs` gibi) henüz muhakeme tamamlanmadan ilk token'ı basıp zeki modelleri iptal etmesini engellemek için:
-1. `laguna-xs`, `bolt-e4b` ve `flash` modelleri **WeakPool**'a atanmıştır.
-2. Ağır modellerle yarışa girdiklerinde **1.6 saniyelik adil handikap beklemesi** uygulanır. Böylece Kimi K3.1 ve DeepSeek R1 modellerinin düşüncelerini toparlayıp ilk cevabı vermesine fırsat tanınır.
-3. Karmaşık mimari, refactor ve algoritma sorularında (`isHeavyTask`) sistem otomatik olarak Kimi K3.1 ve DeepSeek R1 modellerine öncelik verir.
+- **Onayla (`y`)**: Değişikliği anında dosyaya uygular.
+- **Reddet (`n`)**: Değişikliği iptal eder; yapay zekaya neyi düzeltmesi gerektiğini söyleyebilirsiniz.
+- **Geri Al (`/undo`)**: Fikrinizi mi değiştirdiniz? `/undo` yazarak dosyayı anında eski haline döndürebilirsiniz.
 
 ---
 
-## 🎯 Model Seçimi ve Yönlendirme Komutları
-
-Yarışı beklemeden belirli modellere doğrudan kilitlenmek istediğinizde şu komutları kullanabilirsiniz:
-
-### 1. `/heavy <istemi>` — Doğrudan Ağır/Akıl Yürüten Modele Gönder
-Yarışı tamamen baypas eder ve görevi doğrudan havuzun en akıllı modeline (`moonshotai/kimi-k3.1`) devreder:
+### 3. Dosya Referansları (`@dosya`)
+İstemlerinizde herhangi bir dosya veya klasöre `@` işaretiyle doğrudan atıfta bulunabilirsiniz:
 ```bash
-mach> /heavy Bu mikroservis mimarisindeki olası race condition risklerini analiz et
+mach> @src/auth/jwt.ts dosyasındaki kimlik doğrulama mantığı nasıl çalışıyor?
+mach> @src/utils/math.ts dosyasını refactor et ve testlerini @tests/math.test.ts içine yaz
+```
+MachCode ilgili dosyayı otomatik olarak okur ve konuşma bağlamına dahil eder.
+
+---
+
+## 🎛️ Model Seçimi ve Yönetimi
+
+MachCode varsayılan olarak en hızlı yanıt veren modeli otomatik seçer. Ancak dilediğiniz zaman modelleri yönlendirebilirsiniz:
+
+### 1. Varsayılan Yarış Modu (Önerilen)
+Sadece sorunuzu veya görevinizi normal şekilde yazın. MachCode modelleri paralel olarak yarıştırıp en hızlı cevabı getirir:
+```bash
+mach> TypeScript ile cancel destekli bir debounce fonksiyonu yaz
 ```
 
-### 2. `/fast <istemi>` — Hızlı Yanıt Modu
-Karmaşık düşünmeye gerek olmayan basit sorularda en hızlı hafif modele (`minimax-flash` / `laguna-xs`) yönlendirir:
+### 2. Derin Akıl Yürütme Modu (`/heavy`)
+Karmaşık algoritmalar, zorlu refactor işlemleri veya derin mimari kararlar için yarışı atlayıp görevi doğrudan en güçlü akıl yürüten modele gönderin:
 ```bash
-mach> /fast Python'da liste ters çevirme kodunu yaz
+mach> /heavy Bu veritabanı şemasındaki olası race condition ve deadlock risklerini analiz et
 ```
 
-### 3. `/model [id|reset|refresh]` — Canlı Senkronizasyon ve Modele Sabitleme
-NVIDIA Build API'si güncellendikçe ve yeni modeller eklendikçe, sisteminiz API anahtarınız üzerinden dinamik olarak senkronize olur:
-- `mach> /model`: Aktif NVIDIA NIM model havuzunu ve API ile son senkronizasyon zamanını görüntüler.
-- `mach> /model refresh`: Doğrudan NVIDIA Build API'sine (`https://integrate.api.nvidia.com/v1/models`) bağlanarak API anahtarınızın erişebildiği tüm güncel modelleri anında keşfeder, sınıflandırır ve havuzu yeniler.
-- `mach> /model <model-id>`: Oturum boyunca tüm soruları belirli bir modele kilitler (Örn: `/model kimi-k3.1`).
-- `mach> /model reset`: Sabitlemeyi kaldırır ve paralel yarış moduna geri döner.
-
+### 3. Hızlı Cevap Modu (`/fast`)
+Basit syntax soruları, pratik yardım veya bash komutları için en hızlı hafif modele yönlendirin:
 ```bash
-# Kimi K3.1 modeline sabitle:
-mach> /model moonshotai/kimi-k3.1
+mach> /fast Linux'ta 7 günden eski log dosyalarını silen bash komutunu yaz
+```
 
-# NVIDIA Build API'sindeki en yeni modelleri anında çek ve güncelle:
-mach> /model refresh
+### 4. Belirli Bir Modele Sabitleme (`/model`)
+Tüm oturum boyunca sadece tek bir modelle çalışmak isterseniz:
+```bash
+# İstediğiniz modele sabitleyin:
+mach> /model deepseek-ai/deepseek-r1
+mach> /model qwen/qwen2.5-coder-32b-instruct
 
-# Sabitlemeyi kaldır ve paralel yarış moduna geri dön:
+# Sabitlemeyi kaldırıp paralel yarışa dönün:
 mach> /model reset
+
+# NVIDIA hesabınızdaki en yeni modelleri anında senkronize edin:
+mach> /model refresh
 ```
 
-### 4. `/race` — Canlı Hız ve Gecikme Testi (Benchmark)
-NVIDIA NIM modellerinin Time-To-First-Token (TTFT) ve Tokens-Per-Second (TPS) değerlerini anlık olarak yarıştırır ve tablo olarak raporlar:
+### 5. Canlı Hız Testi (`/race`)
+Kendi internet bağlantınızda modellerin ilk token gecikmesini (TTFT) ve saniye başına üretim hızını (TPS) anlık test etmek için:
 ```bash
 mach> /race
 ```
 
-### 5. `/config refresh` — NIM Kataloğunu Canlı Yenile
-NVIDIA'nın sunduğu en yeni modelleri API üzerinden çeker ve havuzları otomatik günceller:
-```bash
-mach> /config refresh
-```
-
 ---
 
-## 🤖 NVIDIA Uzman Alt Ajanları (Subagents)
+## 🤖 Uzman Alt Ajanlar (Subagents)
 
-MachCode içinde NVIDIA NIM modelleriyle optimize edilmiş 5 uzman alt ajan hazır gelir. Bu ajanları isteminizin başında `@<ad>` yazarak tek seferlik çağırabilir ya da `/agent <ad>` ile oturuma sabitleyebilirsiniz:
+MachCode içinde farklı görevler için özelleştirilmiş 5 uzman yapay zeka ajanı bulunur. İsteminizin başına `@<ajan>` yazarak doğrudan çağırabilir veya `/agent <ad>` ile oturumunuza sabitleyebilirsiniz:
 
-| Alt Ajan | Etiket | Mod | Tercih Edilen Modeller | Görev ve Yetkinlikler |
-| :--- | :--- | :---: | :--- | :--- |
-| **Architect** | `@architect` | `PLAN` | Kimi K3.1, DeepSeek R1, Llama 3.1 405B | Üst düzey sistem mimarisi, RFC yazımı, veritabanı şemaları, modüler sınırlar ve mimari diyagramlar. |
-| **Coder** | `@coder` | `BUILD` | Qwen 2.5 Coder 32B, DeepSeek-Coder, Llama 3.3 70B | Cerrahi kod yazımı, temiz git diff üretimi, hata düzeltme ve sıfır sohbet (zero-chatter). |
-| **Tester** | `@tester` | `BUILD` | Qwen 2.5 Coder, Mixtral 8x22B, Llama 3.3 70B | Otomatik birim ve entegrasyon testleri, sınır testleri, mock doğrulama ve regresyon testleri. |
-| **Reviewer** | `@reviewer` | `PLAN` | DeepSeek R1, Llama 3.1 405B, Nemotron 70B | Sıkı kod kalite kapısı, güvenlik denetimi (OWASP), bellek sızıntısı tespiti ve performans incelemesi. |
-| **NVIDIA Specialist** | `@nvidia` | `BUILD` | DeepSeek R1, Nemotron 70B, Llama 3.1 405B | NVIDIA GPU hızlandırma uzmanı (CUDA C++, TensorRT-LLM, cuDF, cuOpt, Triton, DALI, DeepStream). |
+| Alt Ajan | Etiket | Mod | En İyi Olduğu Konular |
+| :--- | :--- | :---: | :--- |
+| **Architect** | `@architect` | `PLAN` | Sistem mimarisi, veritabanı şemaları, API tasarımları ve proje yapısı. |
+| **Coder** | `@coder` | `BUILD` | Temiz kod yazımı, hata düzeltme ve yeni özellik geliştirme. |
+| **Tester** | `@tester` | `BUILD` | Birim (unit) testleri, mock hazırlama ve uç durumları (edge-case) test etme. |
+| **Reviewer** | `@reviewer` | `PLAN` | Kod inceleme, güvenlik açığı tespiti ve performans optimizasyonu. |
+| **NVIDIA Specialist** | `@nvidia` | `BUILD` | GPU hızlandırma, CUDA C++, TensorRT, cuDF ve yüksek başarımlı hesaplama. |
 
 **Örnekler:**
 ```bash
-mach> @architect auth servisi için multi-tenant veritabanı şeması tasarla
-mach> @coder src/middleware/jwt.ts dosyasındaki token doğrulama mantığını yaz
-mach> @tester auth servisi için node:test birim testlerini hazırla
-mach> @reviewer src/engine/executor.ts dosyasını güvenlik açıklarına karşı denetle
-mach> @nvidia bu matris çarpımı fonksiyonunu CUDA paylaşımlı bellek (shared memory) ile optimize et
+mach> @architect Çok kiracılı (multi-tenant) bir SaaS için veritabanı tablolarını tasarla
+mach> @coder Kayan pencere (sliding window) algoritmasıyla bir rate limiter middleware yaz
+mach> @tester Auth servisimiz için kapsamlı node:test testlerini hazırla
+mach> @reviewer src/api/payment.ts dosyasını güvenlik risklerine karşı denetle
 ```
 
 ---
 
-## 🛡️ Cerrahi Kod Düzenleme, Onay Kapısı ve Geri Alma (Snapshot)
+## 💾 Oturumlar & Geri Alma (Undo)
 
-### 1. İnteraktif Diff Onay Kapısı
-MachCode bir dosyayı değiştirmeden veya yeni bir dosya oluşturmadan önce terminalde satır bazlı renkli diff kartı açar:
-```text
-══════════════════════════════════════════════════════════════════
-  FILE EDIT PROPOSAL: src/config.ts (+3 / -1 lines)
-══════════════════════════════════════════════════════════════════
-  @@ -12,3 +12,5 @@
-  - const timeout = 5000;
-  + const timeout = 10000;
-  + export const RETRY_COUNT = 3;
+Çalışmalarınız asla kaybolmaz. MachCode tüm ilerlemenizi otomatik olarak korur:
 
-[Y]es (uygula) / [n]o (reddet) / [a]ll (tümünü onayla) / [d]iff (detay) ?
-```
-- Onay politikasını değiştirmek için:
-  - `/approve ask` (Varsayılan: Her değişiklikte diff sorar)
-  - `/approve auto` (Otomatik uygula: Hızlı denemeler için)
+- **Anlık Kayıt:** İstediğiniz an `/save [ad]` yazarak oturumunuza bir isim verip kaydedebilirsiniz.
+- **Oturumları Listele:** `/sessions` yazarak önceki tüm oturumlarınızı görebilirsiniz.
+- **Kaldığınız Yerden Devam Edin:**
+  ```bash
+  # MachCode içerisindeyken:
+  mach> /resume latest
+  mach> /resume auth-gelistirme
 
-### 2. Çoklu Dosya Geri Alma (Snapshot Rollback)
-MachCode her dosya işleminden önce dosyanın eski halini hafızaya alır:
+  # Doğrudan terminalden başlatırken:
+  mach --resume
+  mach --resume auth-gelistirme
+  ```
+- **Dosya Değişikliklerini Geri Alma:**
+  ```bash
+  mach> /undo             # Yapılan en son değişikliği geri alır
+  mach> /undo src/app.ts  # Belirli bir dosyadaki değişiklikleri geri alır
+  mach> /undo all         # Oturumdaki tüm dosya değişikliklerini sıfırlar
+  mach> /snapshots        # Değişiklik geçmişini listeler
+  ```
+
+---
+
+## 📖 Pratik Komut Tablosu
+
+Terminalde `/` yazarak otomatik açılan menüden seçim yapabilir veya şu komutları kullanabilirsiniz:
+
+| Komut | Kullanım | Açıklama |
+| :--- | :--- | :--- |
+| `/mode` | `/mode [plan\|build]` | Plan (salt okunur) ve Build (aktif ajan) modları arasında geçiş yap (`Tab`). |
+| `/ask` | `/ask <soru>` | Dosyalara dokunmadan salt sohbet/soru-cevap yap. |
+| `/heavy` | `/heavy <istemi>` | Yarışı atla; doğrudan en güçlü akıl yürüten modele gönder. |
+| `/fast` | `/fast <istemi>` | Yarışı atla; doğrudan en hızlı hafif modele gönder. |
+| `/model` | `/model [id\|reset\|refresh]` | Modelleri listele, modele kilitlen veya NVIDIA Build API ile senkronize et. |
+| `/race` | `/race` | Modellerin anlık yanıt hızlarını ve gecikmelerini test et (benchmark). |
+| `/review` | `/review <dosya>` | Hedef dosyada otomatik güvenlik ve kod kalitesi denetimi yap. |
+| `/agent` | `/agent [ad\|reset]` | Uzman alt ajanları incele veya oturuma sabitle. |
+| `/undo` | `/undo [dosya\|all]` | Yapay zekanın yaptığı dosya değişikliklerini geri al. |
+| `/snapshots`| `/snapshots` | Dosya değişiklik geçmişini listele. |
+| `/approve` | `/approve [ask\|auto]` | Dosya yazma öncesindeki diff onay politikasını değiştir. |
+| `/search` | `/search <desen>` | Tüm projede yüksek hızlı regex kod araması yap. |
+| `/add` / `/drop` | `/add <dosya>` | Dosyayı kalıcı bağlam penceresine ekle veya çıkar. |
+| `/save` | `/save [ad]` | Aktif oturumu diske kaydet. |
+| `/sessions` | `/sessions` | Kayıtlı oturumları listele. |
+| `/resume` | `/resume [id\|latest]` | Geçmiş oturumu geri yükle ve devam et. |
+| `/theme` | `/theme [ad]` | Terminal temasını değiştir (`tokyo-night`, `matrix`, `dracula`...). |
+| `/status` | `/status` | Durum çubuğunu ve oturum istatistiklerini göster. |
+| `/tokens` | `/tokens` | Harcanan token miktarını görüntüle. |
+| `/diff` | `/diff` | Commit'lenmemiş Git değişikliklerini ekranda göster. |
+| `/commit` | `/commit` | Otomatik açıklayıcı commit mesajı oluşturup commit'le. |
+| `/branch` | `/branch [ad]` | Git dalını göster veya yeni dala geç. |
+| `/run` | `/run <komut>` | Çalışma alanında doğrudan terminal komutu koştur. |
+| `/config` | `/config [key\|refresh]`| API anahtarını veya model havuzunu güncelle. |
+| `/clear` | `/clear` | Terminal ekranını temizle. |
+| `/help` | `/help` | Komut yardım kartını yazdır. |
+| `/exit` | `/exit` | MachCode'dan güvenle çıkış yap. |
+
+---
+
+## ❓ Sıkça Sorulan Sorular (SSS)
+
+### 1. MachCode nedir, diğer araçlardan farkı ne?
+Çoğu yapay zeka aracı tek bir sağlayıcıya (örneğin sadece Claude veya sadece OpenAI) bağlıdır. O sunucuda yoğunluk veya bekleme olduğunda siz de beklersiniz.
+
+MachCode, bünyesinde onlarca farklı sağlayıcının en iyi modellerini barındıran **NVIDIA Build (NIM)** altyapısını kullanır. Sorunuzu aynı anda birden fazla modele gönderir ve ilk kim cevap verirse onu ekrana basar. Böylece hem sıfır bekleme süresi hem de kesintisiz çalışma elde edersiniz.
+
+### 2. Yarış yerine sadece belirli bir modeli kullanabilir miyim?
+Evet! İstediğiniz zaman dilediğiniz modeli seçebilirsiniz:
 ```bash
-# Yapılan son değişikliği geri al:
-mach> /undo
-
-# Belirli bir dosyadaki tüm AI değişikliklerini geri al:
-mach> /undo src/config.ts
-
-# Oturum boyunca yapılan TÜM dosya değişikliklerini sıfırla:
-mach> /undo all
-
-# Geçmiş anlık görüntüleri listele:
-mach> /snapshots
+mach> /model deepseek-ai/deepseek-r1
 ```
+Tekrar yarış moduna dönmek için tek yapmanız gereken `/model reset` yazmaktır.
 
----
+### 3. Kodlarım güvende mi? MachCode benden habersiz dosya değiştirir mi?
+Varsayılan olarak **MachCode izniniz olmadan asla bir dosyayı değiştiremez**. Her düzenleme öncesinde satır satır neyin eklendiğini/silindiğini gösteren renkli bir diff kartı açar ve onayınızı (`[Y]es / [n]o`) bekler. Beğenmediğiniz bir değişikliği `/undo` ile saniyeler içinde geri alabilirsiniz.
 
-## 💾 Oturum Yönetimi & Dayanıklılık (Sessions)
+### 4. API anahtarını nasıl alırım?
+**[build.nvidia.com](https://build.nvidia.com)** adresine gidin, ücretsiz bir hesap açın ve bir API anahtarı (`nvapi-...`) oluşturun. NVIDIA geliştiricilere ücretsiz deneme kredisi sunmaktadır. Anahtarı aldıktan sonra terminalde `mach` yazıp yapıştırmanız yeterlidir.
 
-Tüm çalışmalarınız `~/.machcode/sessions/` altında otomatik olarak kaydedilir. Elektrik kesilse veya terminal kapansa bile kaldığınız yerden devam edebilirsiniz:
-
+### 5. NVIDIA yeni bir model eklediğinde ne olur?
+MachCode, NVIDIA Build API ile dinamik olarak senkronizedir. Yeni modeller yayınlandığında sistem arka planda bunları otomatik keşfeder. Dilediğiniz zaman tek bir komutla da modelleri tazeleyebilirsiniz:
 ```bash
-# Aktif oturumu kaydet:
-mach> /save v1-auth-bitti
-
-# Kayıtlı oturumları listele:
-mach> /sessions
-
-# Önceki oturumu geri yükle:
-mach> /resume mc_46syblac
-mach> /resume latest
-
-# Doğrudan terminalden önceki oturumla başla:
-mach --resume
-mach --resume v1-auth-bitti
+mach> /model refresh
 ```
 
-### Bağlam Özetleme (Context Summarization)
-Oturum uzadığında ve token limiti yaklaştığında, MachCode arka planda akıllı özetleme motorunu çalıştırır. Eski konuşma turlarını otomatik özetleyerek modelin hafızasını korur ve bağlam penceresi taşmalarını (context overflow) önler.
-
----
-
-## 🧩 NVIDIA Resmi Ajan Becerileri ve MCP Köprüsü
-
-### 1. NVIDIA Official Agent Skills
-MachCode, NVIDIA'nın resmi [`NVIDIA/skills`](https://github.com/NVIDIA/skills) deposundaki becerileri otomatik tanır ve modellerin kullanımına sunar:
-- `/skills`: Mevcut tüm NVIDIA becerilerini listeler.
-- `/cuopt`: Araç rota optimizasyonu, LP ve MILP matematiksel modelleme.
-- `/cudf`: GPU DataFrame hızlandırma ve pandas optimizasyonu.
-- `/cudaq`: Hibrit kuantum-klasik CUDA-Q programlama.
-
-### 2. Model Context Protocol (MCP) Köprüsü
-Proje dizininizdeki `.machcode/mcp.json` dosyası üzerinden harici araçları ve sunucuları bağlayabilirsiniz:
-```bash
-mach> /mcp list
-mach> /mcp reload
-```
-
----
-
-## 📖 Tüm Slash (/) Komutları Referansı
-
-| Komut | Kullanım | Kategori | Açıklama |
-| :--- | :--- | :--- | :--- |
-| `/ask` | `/ask <soru>` | İcra | Dosya değiştirmeden salt sohbet/soru-cevap yap. |
-| `/plan` | `/plan <istemi>` | İcra | Plan Moduna geç veya mimari analiz üret. |
-| `/mode` | `/mode [plan\|build]` | İcra | Plan (salt okunur) ve Build (ajan) modları arasında geçiş yap. |
-| `/heavy` | `/heavy <istemi>` | İcra | Yarışı atla; doğrudan en ağır/akıllı modele yönlendir. |
-| `/fast` | `/fast <istemi>` | İcra | Yarışı atla; doğrudan hafif/hızlı modele yönlendir. |
-| `/review` | `/review <dosya>` | İcra | Hedef dosyada derin güvenlik ve kod kalitesi denetimi yap. |
-| `/agent` | `/agent [ad\|reset]` | Alt Ajan | `@architect`, `@coder` gibi alt ajanları incele veya sabitle. |
-| `/model` | `/model [id\|reset]` | Sistem | Belirli bir NIM modeline kilitlen veya yarış havuzuna dön. |
-| `/race` | `/race` | Sistem | Modellerin TTFT ve TPS hızlarını canlı kıyasla. |
-| `/config` | `/config [refresh\|key]`| Sistem | API anahtarını güncelle veya model havuzlarını yenile. |
-| `/approve` | `/approve [ask\|auto]` | Güvenlik | Diff onay politikasını değiştir. |
-| `/undo` | `/undo [dosya\|all]` | Güvenlik | AI değişikliklerini geriye sar. |
-| `/snapshots`| `/snapshots` | Güvenlik | Dosya anlık görüntülerinin listesini göster. |
-| `/search` | `/search <desen>` | Bağlam | Çalışma alanında yüksek hızlı regex kod araması yap. |
-| `/add` | `/add <dosya>` | Bağlam | Belirli bir dosyayı bağlam penceresine ekle. |
-| `/drop` | `/drop <dosya>` | Bağlam | Dosyayı bağlam penceresinden çıkar. |
-| `/save` | `/save [ad]` | Oturum | Aktif oturumu diske kaydet. |
-| `/sessions` | `/sessions` | Oturum | Kayıtlı oturumları listele. |
-| `/resume` | `/resume [id\|latest]` | Oturum | Geçmiş oturumu geri yükle. |
-| `/theme` | `/theme [ad]` | Arayüz | Terminal temasını değiştir (`tokyo-night`, `matrix`, `dracula`...). |
-| `/status` | `/status` | Arayüz | Oturum teşhis kartını ve durum çubuğunu göster. |
-| `/tokens` | `/tokens` | Teşhis | Oturumda harcanan prompt ve çıktı token istatistiklerini göster. |
-| `/diff` | `/diff` | Git | Commit'lenmemiş Git değişikliklerini ekranda göster. |
-| `/commit` | `/commit` | Git | Otomatik konvansiyonel commit mesajı üretip commit'le. |
-| `/branch` | `/branch [ad]` | Git | Git dalını göster veya yeni dala geçiş yap. |
-| `/run` | `/run <komut>` | Sistem | Çalışma alanında doğrudan terminal komutu koştur. |
-| `/clear` | `/clear` | Arayüz | Terminal ekranını temizle. |
-| `/help` | `/help` | Yardım | Tüm komutların listesini yazdır. |
-| `/exit` | `/exit` | Sistem | MachCode CLI'dan güvenle çıkış yap. |
-
----
-
-## ❓ Sıkça Sorulan Sorular & Sorun Giderme
-
-### 1. Neden her yarışta `poolside/laguna-xs` kazanıyordu?
-`laguna-xs`, 50ms gibi çok kısa bir sürede ilk token'ı basan hafif bir mikro-modeldir. Eski handikap filtresi bu modeli geciktirmediği için Kimi K3.1 ve DeepSeek R1 gibi zeki modeller henüz düşünürken yarışı bitiriyordu. Son güncelleme ile:
-- `laguna-xs` WeakPool havuzuna alındı.
-- Hızlı modeller için 1.6 saniyelik adil handikap uygulanarak düşünce modellerine öncelik tanındı.
-
-### 2. Kimi K3.1 modelini doğrudan nasıl kullanabilirim?
-İki kolay yöntem vardır:
-- Tek seferlik: `mach> /heavy [sorunuz]`
-- Kalıcı sabitleme: `mach> /model moonshotai/kimi-k3.1`
-
-### 3. API anahtarımı değiştirmek istersem ne yapmalıyım?
-Terminal içerisindeyken şu komutu çalıştırmanız yeterlidir:
-```bash
-mach> /config key nvapi-yeni-anahtariniz
-```
+### 6. MachCode'u sadece soru sormak veya kod incelemek için kullanabilir miyim?
+Evet. `Tab` tuşuna basarak veya `/mode plan` yazarak **Plan Modu**'na geçebilirsiniz. Bu modda MachCode salt okunur çalışır; dosyalarınızı inceler ve sorularınızı cevaplar ancak asla kodlarda değişiklik yapmaz.
 
 ---
 
 ## 📄 Lisans
-Bu proje **[MIT Lisansı](LICENSE)** altında sunulmaktadır.
-Katkıda bulunmak için lütfen [CONTRIBUTING.md](CONTRIBUTING.md) belgesini inceleyin.
+
+MachCode, **[MIT Lisansı](LICENSE)** altında sunulan ücretsiz ve açık kaynaklı bir yazılımdır.
+Katkıda bulunmak ve topluluk kuralları için [CONTRIBUTING.md](CONTRIBUTING.md) dosyasını inceleyebilirsiniz.

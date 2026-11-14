@@ -1,8 +1,8 @@
-# ⚡ MachCode User Guide & Documentation
+# ⚡ MachCode
 
 <p align="center">
-  <strong>Multi-Model Parallel Racing AI Coding & Q&A CLI Powered by NVIDIA NIM</strong><br />
-  <em>Antigravity / Claude Code / OpenCode grade terminal assistant powered by full-pool parallel LLM racing across 57+ NVIDIA NIM models (21+ AI providers), adaptive Plan & Build modes, surgical file editing, and snapshot rollbacks.</em>
+  <strong>The High-Velocity, Multi-Model AI Coding Assistant for Your Terminal</strong><br />
+  <em>Powered by NVIDIA NIM. Races frontier AI models in parallel so you never wait for slow APIs. Includes full dual-mode operation (Plan & Build), surgical file editing, and instant rollbacks.</em>
 </p>
 
 <p align="center">
@@ -12,349 +12,265 @@
 <p align="center">
   <a href="https://github.com/gokaykrbs/MachCode/releases"><img src="https://img.shields.io/badge/version-v0.1.0-blue.svg?style=flat-square" alt="version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
-  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-109%2F109%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
-  <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-57%2B%20Models%20Racing-76B900.svg?style=flat-square&logo=nvidia" alt="NVIDIA NIM" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.6%20Strict-blue.svg?style=flat-square&logo=typescript" alt="TypeScript" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/REPL-Interactive%20Q%26A%20%2B%20Code-cyan.svg?style=flat-square" alt="REPL Mode" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-110%2F110%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
+  <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-57%2B%20Models-76B900.svg?style=flat-square&logo=nvidia" alt="NVIDIA NIM" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.6-blue.svg?style=flat-square&logo=typescript" alt="TypeScript" /></a>
+  <a href="#"><img src="https://img.shields.io/badge/CLI-Global%20Binary-cyan.svg?style=flat-square" alt="CLI" /></a>
 </p>
 
 ---
 
-## 📑 Table of Contents
-1. [Architectural Philosophy](#-architectural-philosophy)
-2. [Installation & Quick Start](#-installation--quick-start)
-3. [Dual Operating Modes: Plan & Build](#-dual-operating-modes-plan--build)
-4. [Streaming Racing Engine & Fair Balancing](#-streaming-racing-engine--fair-balancing)
-5. [Model Steering & Routing Commands](#-model-steering--routing-commands)
-6. [Specialized NVIDIA Subagents](#-specialized-nvidia-subagents)
-7. [Surgical Code Editing, Diff Approval & Snapshots](#-surgical-code-editing-diff-approval--snapshots)
-8. [Session Persistence & Context Management](#-session-persistence--context-management)
-9. [Official NVIDIA Agent Skills & MCP Bridge](#-official-nvidia-agent-skills--mcp-bridge)
-10. [Command Reference (29 Slash Commands)](#-command-reference-29-slash-commands)
-11. [Troubleshooting & FAQ](#-troubleshooting--faq)
+## 📖 Welcome to MachCode
 
----
+**MachCode** is an open-source, terminal-native AI coding assistant built for developers who want speed, safety, and precision. 
 
-## 💡 Architectural Philosophy
-
-Traditional terminal AI tools bottleneck on a single proprietary model. When that model suffers from cold starts, queue delays, or 10-second Time-to-First-Token (TTFT) spikes, your workflow grinds to a halt.
-
-**MachCode** solves this by leveraging **NVIDIA Build (NIM)** to race all usable generative models across your API key concurrently (**Streaming Handoff Racing**). It locks onto the first model that emits a real content token and immediately aborts the remaining streams.
+Instead of relying on a single AI model that might be slow or temporarily down, MachCode connects to **NVIDIA Build (NIM)** and fires requests across a pool of frontier generative models simultaneously. The first model to stream a real answer wins the race, and the rest are instantly cancelled. You get lightning-fast responses with zero waiting.
 
 ```text
-                                 User Prompt / Instruction
-                                            │
-                                            ▼
-                     [Parallel Multi-Model Race: StrongPool (57+ Models)]
-           (Moonshot Kimi K3.1, DeepSeek R1, Qwen Coder, Llama 3.1 405B, Nemotron...)
-                                            │
-              ┌─────────────────────────────┴─────────────────────────────┐
-              │ First Model Emits Real Content Token (200 OK)             │ All Fail / 10s Timeout
-              ▼                                                           ▼
-    [Instant Lock & Clean Stream]                               [WeakPool Fallback Race]
-    • Buffers reasoning_content into <plan>                     • Fast lightweight pool race
-    • Locks onto winning model & streams cleanly                • Guarantees resilient response
-    • Aborts all other 56 pending HTTP streams                  • Never leaves user hanging
-    • Displays 🏁 Race Winner & latency telemetry
+                        Your Prompt / Instruction
+                                   │
+                                   ▼
+        [Parallel Multi-Model Race Across Available AI Models]
+         (DeepSeek, Kimi, Llama 3.1, Qwen Coder, Nemotron, Mistral...)
+                                   │
+        ┌──────────────────────────┴──────────────────────────┐
+        │ Fastest Model Emits First Content Token             │ Network / Timeout
+        ▼                                                     ▼
+[Instant Lock & Clean Stream]                       [Fast Fallback Pool]
+• Locks onto the fastest responder                  • Taps instant backup models
+• Cancels remaining streams to save bandwidth       • You are never left waiting
+• Streams cleanly to your terminal
 ```
 
 ---
 
-## 📦 Installation & Quick Start
+## 🚀 Quick Start in 60 Seconds
 
-### Prerequisites
-- **Node.js**: `>= 18.0.0` (Node 20+ recommended)
-- **Package Manager**: `npm` or `pnpm`
-- **NVIDIA Build (NIM) API Key**: Obtain a free key from [build.nvidia.com](https://build.nvidia.com) (`nvapi-...`).
+### 1. Installation
+Install MachCode globally using `npm` (or `pnpm`):
 
-### 1. Global Installation
 ```bash
-# Via NPM
 npm install -g machcode
-
-# Or from source
-git clone https://github.com/gokaykrbs/MachCode.git
-cd MachCode
-pnpm install
-pnpm run build
-pnpm link --global
 ```
 
-### 2. Configure Your API Key
-Launch MachCode from any workspace:
+*(Or clone and build from source: `git clone https://github.com/gokaykrbs/MachCode.git && cd MachCode && pnpm install && pnpm run build && npm link`)*
+
+### 2. Launch
+Run `mach` in any project folder:
 
 ```bash
 mach
 ```
 
-If no key is configured, MachCode prompts you interactively and securely persists it to `~/.machcode/config.json`. You can also configure it via:
-```bash
-# Option A: In-session configuration
-mach> /config key nvapi-your-key-here
-
-# Option B: Environment variable
-export NVIDIA_API_KEY="nvapi-your-key-here"  # macOS / Linux
-$env:NVIDIA_API_KEY="nvapi-your-key-here"     # Windows PowerShell
-
-# Option C: .env file
-cp .env.example .env
-```
+### 3. Set Your Free API Key
+On your first launch, MachCode will prompt you for your NVIDIA Build API key. 
+- You can get a free key with complimentary credits at **[build.nvidia.com](https://build.nvidia.com)**.
+- You can also set it via environment variable:
+  ```bash
+  export NVIDIA_API_KEY="nvapi-your-key-here"     # macOS / Linux
+  $env:NVIDIA_API_KEY="nvapi-your-key-here"        # Windows PowerShell
+  ```
 
 ---
 
-## 🔄 Dual Operating Modes: Plan & Build
+## 🧭 Core Concepts: How MachCode Works
 
-Switch between modes anytime by pressing the `Tab` key or typing `/mode`:
+### 1. Dual Operating Modes: Plan & Build
+Switch modes anytime by pressing `Tab` or typing `/mode`:
+
+| Mode | What it Does | When to Use It |
+| :--- | :--- | :--- |
+| **`[PLAN]`** | **Read-Only / Safe:** Inspects code, analyzes bugs, and writes architectural plans without touching your files. | Exploring unfamiliar repos, designing schemas, or asking general questions. |
+| **`[BUILD]`** | **Active Agent:** Reads files, edits code, runs shell commands, and writes tests with your approval. | Implementing features, fixing bugs, and refactoring code. |
+
+---
+
+### 2. Human-in-the-Loop Safety & Diffs
+You are always in control. Before MachCode creates or modifies any file, it presents a clear, colorized diff card:
 
 ```text
-[PLAN]  --> Safe Read-Only Mode: Codebase exploration, architectural blueprints, no writes.
-[BUILD] --> Full Autonomous Agent: Surgical edits, diff previews, tests, and bash execution.
+══════════════════════════════════════════════════════════════════
+  PROPOSED FILE EDIT: src/server.ts (+2 / -1 lines)
+══════════════════════════════════════════════════════════════════
+  @@ -15,3 +15,4 @@
+  - const port = 3000;
+  + const port = process.env.PORT || 8080;
+  + console.log(`Server listening on port ${port}`);
+
+[Y]es (apply) / [n]o (reject) / [a]ll (approve all) / [d]iff (view full) ?
 ```
 
-### 1. Plan Mode (`/mode plan` or `Tab`)
-- Inspects repositories, diagnoses bugs, and produces architectural plans.
-- Restricted to read-only tools (`read_file`, `list_directory`, `glob`, `grep`).
-- **Never** modifies files or runs destructive terminal commands.
-
-### 2. Build Mode (`/mode build` or `Tab`)
-- Implements features, performs surgical multi-file edits, and executes tests.
-- Uses `edit_file`, `write_file`, `apply_diff`, and `run_command`.
-- Presents interactive, colorized diff confirmation cards before modifying workspace files.
+- **Approve (`y`)**: Applies the changes immediately.
+- **Reject (`n`)**: Cancels the edit and lets you tell the AI what to change.
+- **Undo (`/undo`)**: Made a mistake? Type `/undo` to instantly revert the file back to its exact previous state.
 
 ---
 
-## 🏎️ Streaming Racing Engine & Fair Balancing
-
-### Pool Classification
-- **StrongPool (Frontier Reasoning & Heavy Coding):**
-  - `moonshotai/kimi-k3.1` & `kimi-k2.6`
-  - `deepseek-ai/deepseek-r1` & `deepseek-coder-33b`
-  - `qwen/qwen2.5-coder-32b-instruct`
-  - `meta/llama-3.1-405b-instruct` & `codellama-70b`
-  - `nvidia/nemotron-4-340b-instruct` & `nemotron-70b`
-- **WeakPool (Ultra-Fast Fallback & Small Models):**
-  - `poolside/laguna-xs-2.1`
-  - `minimaxai/minimax-m3.1-flash`
-  - `openai/gpt-oss-20b`
-  - `nvidia/nemotron-3.5-bolt-e4b`
-
-### Fair Balancing & Micro-Model Handicap
-Frontier reasoning models (`Kimi K3.1`, `DeepSeek R1`) emit internal chain-of-thought (`reasoning_content`) before their first actual answer token. MachCode buffers internal reasoning into `<plan>` to keep the terminal output clean.
-
-To prevent micro-models (`laguna-xs`, `flash`, `bolt-e4b`) from winning in 50ms before reasoning models can finish their thoughts:
-1. Micro and extra-small models are segregated into the **WeakPool**.
-2. When racing alongside frontier models, ultra-fast models are assigned a **1.6-second fair handicap delay**.
-3. Heavy tasks (architecture, refactoring, algorithms) automatically trigger **Priority Heavy Routing** to `Kimi K3.1` and `DeepSeek R1`.
+### 3. File Context & Mentions (`@file`)
+Reference any file or folder directly in your prompt by typing `@`:
+```bash
+mach> How does authentication work in @src/auth/jwt.ts?
+mach> Refactor @src/utils/math.ts and write tests in @tests/math.test.ts
+```
+MachCode automatically reads the referenced files and includes their contents in the conversation context.
 
 ---
 
-## 🎯 Model Steering & Routing Commands
+## 🎛️ Controlling Models
 
-Take direct control of model dispatching when you want specific foundation capabilities:
+MachCode's parallel racing engine gives you the fastest response by default. However, you can steer or pin models whenever you want:
 
-### 1. `/heavy <prompt>` — Direct Frontier Reasoning
-Bypasses racing and routes exclusively to your top Heavyweight model (`moonshotai/kimi-k3.1`):
+### 1. Let the Fastest Model Answer (Default)
+Just type your prompt normally. MachCode automatically races the available models in parallel:
 ```bash
-mach> /heavy Analyze potential race conditions and deadlock vectors in this event loop
+mach> Create a debounce function in TypeScript with cancel support
 ```
 
-### 2. `/fast <prompt>` — Instant Lightweight Dispatch
-Bypasses racing for trivial lookups, routing to the fastest lightweight model:
+### 2. Route to Deep Reasoning (`/heavy`)
+For complex architectures, hard algorithms, or tricky refactors, bypass the race and send your task straight to a top-tier reasoning model:
 ```bash
-mach> /fast Write a bash one-liner to find all *.log files older than 7 days
+mach> /heavy Analyze this database schema for potential race conditions and deadlocks
 ```
 
-### 3. `/model [id|reset|refresh]` — Live Dynamic Sync & Model Pinning
-As NVIDIA releases new models on NVIDIA Build, MachCode discovers and balances them dynamically based on your API key:
-- `mach> /model`: Displays the active NIM racing pool and the timestamp of the last live API sync.
-- `mach> /model refresh`: Connects directly to `https://integrate.api.nvidia.com/v1/models` using your API key, discovers newly added models, auto-routes them, and refreshes the pool live.
-- `mach> /model <model-id>`: Pins queries to a specific model (e.g. `/model kimi-k3.1`).
-- `mach> /model reset`: Resumes full multi-model parallel racing.
-
+### 3. Route to Quick Answers (`/fast`)
+For simple questions, syntax lookups, or shell commands:
 ```bash
-# Pin to Moonshot Kimi K3.1:
-mach> /model moonshotai/kimi-k3.1
+mach> /fast How do I recursively delete all .DS_Store files in bash?
+```
 
-# Sync live models directly from NVIDIA Build API:
-mach> /model refresh
+### 4. Pin a Specific Model (`/model`)
+Want to work exclusively with a specific model for your entire session?
+```bash
+# Pin to any model by name:
+mach> /model deepseek-ai/deepseek-r1
+mach> /model qwen/qwen2.5-coder-32b-instruct
 
-# Unpin and return to multi-model parallel racing:
+# Unpin and return to parallel racing:
 mach> /model reset
+
+# Sync live models directly from your NVIDIA account:
+mach> /model refresh
 ```
 
-### 4. `/race` — Live Latency & TPS Benchmark
-Races active NIM models simultaneously on a benchmark query and prints a comparative telemetry report:
+### 5. Live Benchmark (`/race`)
+Want to see which AI models are currently responding fastest on your connection?
 ```bash
 mach> /race
 ```
-
-### 5. `/config refresh` — Dynamic Catalog Discovery
-Fetches the latest active models from NVIDIA NIM and updates your model pools automatically:
-```bash
-mach> /config refresh
-```
+MachCode sends a test prompt to all active models and displays a comparative speed table showing TTFT (Time to First Token) and TPS (Tokens Per Second).
 
 ---
 
-## 🤖 Specialized NVIDIA Subagents
+## 🤖 Meet the Subagents
 
-MachCode bundles 5 specialized subagents natively bound to the NVIDIA NIM catalog. Invoke them using `@<name>` mentions or pin them using `/agent <name>`:
+MachCode includes 5 built-in AI specialists. Call them directly by starting your prompt with `@<agent>` or switch to one permanently with `/agent <name>`:
 
-| Subagent | Mention | Mode | Preferred NIM Models | Role & Capabilities |
-| :--- | :--- | :---: | :--- | :--- |
-| **Architect** | `@architect` | `PLAN` | Kimi K3.1, DeepSeek R1, Llama 3.1 405B | System architecture, RFC design, database schemas, modular boundaries, UML. |
-| **Coder** | `@coder` | `BUILD` | Qwen 2.5 Coder 32B, DeepSeek-Coder, Llama 3.3 70B | Surgical code implementation, precise git diffs, clean zero-chatter code generation. |
-| **Tester** | `@tester` | `BUILD` | Qwen 2.5 Coder, Mixtral 8x22B, Llama 3.3 70B | Unit & integration tests, boundary fuzzing, mock assertions, regression suites. |
-| **Reviewer** | `@reviewer` | `PLAN` | DeepSeek R1, Nemotron 70B, Llama 3.1 405B | Strict code review, security auditing (OWASP), memory leaks, performance profiling. |
-| **NVIDIA Specialist** | `@nvidia` | `BUILD` | DeepSeek R1, Nemotron 70B, Llama 3.1 405B | GPU acceleration (CUDA C++, TensorRT-LLM, cuDF, cuOpt, Triton, DALI). |
+| Subagent | Mention | Mode | Best For |
+| :--- | :--- | :---: | :--- |
+| **Architect** | `@architect` | `PLAN` | System design, database schemas, API specs, and project structure. |
+| **Coder** | `@coder` | `BUILD` | Writing clean, robust code, fixing bugs, and implementing features. |
+| **Tester** | `@tester` | `BUILD` | Writing unit tests, mocking dependencies, and fuzzing edge cases. |
+| **Reviewer** | `@reviewer` | `PLAN` | Code review, spotting security vulnerabilities, and performance audits. |
+| **NVIDIA Specialist** | `@nvidia` | `BUILD` | GPU acceleration, CUDA, TensorRT, cuDF, and high-performance computing. |
 
 **Examples:**
 ```bash
-mach> @architect Design a distributed queue architecture for our webhook processor
-mach> @coder Implement the AES-256-GCM encryption helper in src/crypto/cipher.ts
-mach> @tester Generate a complete node:test suite for src/crypto/cipher.ts
-mach> @reviewer Audit src/engine/executor.ts for command injection and path traversal vulnerabilities
-mach> @nvidia Optimize this reduction kernel using CUDA warp shuffles and shared memory tiling
+mach> @architect How should we structure the tables for a multi-tenant SaaS app?
+mach> @coder Implement rate limiting middleware using a sliding window algorithm
+mach> @tester Write comprehensive unit tests for our auth service
+mach> @reviewer Check src/api/payment.ts for security risks and edge cases
 ```
 
 ---
 
-## 🛡️ Surgical Code Editing, Diff Approval & Snapshots
+## 💾 Sessions & Workspaces
 
-### 1. Interactive Approval Gate
-Before modifying or creating any file, MachCode presents an interactive, colorized diff preview:
-```text
-══════════════════════════════════════════════════════════════════
-  FILE EDIT PROPOSAL: src/config.ts (+3 / -1 lines)
-══════════════════════════════════════════════════════════════════
-  @@ -12,3 +12,5 @@
-  - const timeout = 5000;
-  + const timeout = 10000;
-  + export const RETRY_COUNT = 3;
+Never lose your work. MachCode automatically preserves your progress:
 
-[Y]es / [n]o / [a]ll / [d]iff ?
-```
-- Toggle policy anytime:
-  - `/approve ask` (Default: Always confirm with diff card)
-  - `/approve auto` (Auto-apply: Useful for rapid prototyping)
+- **Save Checkpoints:** Type `/save [name]` anytime to bookmark your session state.
+- **List Sessions:** Type `/sessions` to view all saved workspaces and checkpoints.
+- **Resume Anytime:** 
+  ```bash
+  # Inside MachCode:
+  mach> /resume latest
+  mach> /resume my-feature-branch
 
-### 2. Multi-File Snapshot Rollback
-MachCode captures filesystem snapshots before every mutation:
+  # Directly from terminal:
+  mach --resume
+  mach --resume my-feature-branch
+  ```
+- **Context Summarization:** As conversations grow long, MachCode automatically summarizes earlier turns in the background, keeping memory fresh without hitting token limits.
+
+---
+
+## 📖 Command Cheat Sheet
+
+Type `/` in the terminal to open the interactive autocomplete menu, or use this reference:
+
+| Command | Usage | Description |
+| :--- | :--- | :--- |
+| `/mode` | `/mode [plan\|build]` | Toggle between Plan (read-only) and Build (active agent) modes (or press `Tab`). |
+| `/ask` | `/ask <question>` | Ask a question without making any file changes or running commands. |
+| `/heavy` | `/heavy <prompt>` | Route directly to the deepest reasoning model available. |
+| `/fast` | `/fast <prompt>` | Route directly to the fastest lightweight model. |
+| `/model` | `/model [id\|reset\|refresh]` | View model pools, pin a specific model, or sync live with NVIDIA Build API. |
+| `/race` | `/race` | Run a live parallel speed and latency benchmark across AI models. |
+| `/review` | `/review <file>` | Perform an automated security, bug, and quality review on a file. |
+| `/agent` | `/agent [name\|reset]` | Switch between specialized subagents (`@architect`, `@coder`, etc.). |
+| `/undo` | `/undo [file\|all]` | Revert AI modifications (last edit, specific file, or full session). |
+| `/snapshots`| `/snapshots` | View chronological history of file changes. |
+| `/approve` | `/approve [ask\|auto]` | Toggle interactive diff confirmation before file edits. |
+| `/search` | `/search <query>` | Fast regex search across all files in your project. |
+| `/add` / `/drop` | `/add <file>` | Add or remove specific files from the permanent context window. |
+| `/save` | `/save [name]` | Save current conversation and state as a named checkpoint. |
+| `/sessions` | `/sessions` | List all saved sessions for this workspace. |
+| `/resume` | `/resume [id\|latest]` | Restore a previous session and continue working. |
+| `/theme` | `/theme [name]` | Switch UI theme (`tokyo-night`, `matrix`, `dracula`, `monokai`...). |
+| `/status` | `/status` | Show live status bar and session diagnostics. |
+| `/tokens` | `/tokens` | Display token usage statistics for the current session. |
+| `/diff` | `/diff` | Show uncommitted Git changes in the workspace. |
+| `/commit` | `/commit` | Automatically generate a conventional commit message and commit. |
+| `/branch` | `/branch [name]` | Check current Git branch or switch branches. |
+| `/run` | `/run <command>` | Execute a shell command directly inside your workspace. |
+| `/config` | `/config [key\|refresh]` | View or update your NVIDIA API key and model configuration. |
+| `/clear` | `/clear` | Clear the terminal screen. |
+| `/help` | `/help` | Print the command help card. |
+| `/exit` | `/exit` | Gracefully exit MachCode (`q` or `Ctrl+C`). |
+
+---
+
+## ❓ Frequently Asked Questions (FAQ)
+
+### 1. What is MachCode and how is it different from other AI tools?
+Most AI coding tools send your request to a single model provider (e.g., only Claude or only OpenAI). If that service is experiencing traffic spikes or cold starts, you have to wait. 
+
+MachCode connects to **NVIDIA Build (NIM)**, which hosts dozens of top-tier models (DeepSeek, Llama, Qwen, Kimi, Mistral, Nemotron, etc.). MachCode sends your prompt to multiple models at the same time and locks onto whichever model answers first. You get maximum speed and zero downtime.
+
+### 2. Can I use a specific model instead of racing?
+Yes! If you prefer a particular model (for example, DeepSeek R1 for logic or Qwen 2.5 Coder for code), you can pin it anytime:
 ```bash
-# Revert the most recent file change:
-mach> /undo
-
-# Revert all changes made to a specific file:
-mach> /undo src/config.ts
-
-# Revert ALL changes made during this session:
-mach> /undo all
-
-# View chronological snapshot history:
-mach> /snapshots
+mach> /model deepseek-ai/deepseek-r1
 ```
+Whenever you want to return to parallel racing, simply type `/model reset`.
 
----
+### 3. Is my code safe? Does MachCode edit files without permission?
+By default, **MachCode never modifies any file without your explicit approval**. Whenever the AI wants to write or update code, it presents an interactive diff preview card and waits for your confirmation (`[Y]es / [n]o`). You can also undo any change at any time using `/undo`.
 
-## 💾 Session Persistence & Context Management
+### 4. How do I get an API key?
+Visit **[build.nvidia.com](https://build.nvidia.com)**, create a free account, and generate an API key (`nvapi-...`). NVIDIA provides generous free credits to get started. Once you have your key, run `mach` and paste it in.
 
-All work is automatically recorded in `~/.machcode/sessions/`. Sessions survive terminal restarts, crashes, and power outages:
-
+### 5. What happens when NVIDIA adds new models?
+MachCode automatically syncs with the NVIDIA Build API. If new models are released, MachCode discovers them automatically in the background. You can also trigger an instant sync anytime by typing:
 ```bash
-# Save current session checkpoint:
-mach> /save milestone-auth-complete
-
-# List recorded sessions:
-mach> /sessions
-
-# Restore a previous session:
-mach> /resume mc_46syblac
-mach> /resume latest
-
-# Launch MachCode directly into a saved session:
-mach --resume
-mach --resume milestone-auth-complete
+mach> /model refresh
 ```
 
-### Context Summarization
-When conversations approach the model's context window limit, MachCode's summarization engine condenses earlier turns automatically, preserving critical state without token overflow.
-
----
-
-## 🧩 Official NVIDIA Agent Skills & MCP Bridge
-
-### 1. Official NVIDIA Skills
-Integrated directly with [`NVIDIA/skills`](https://github.com/NVIDIA/skills):
-- `/skills`: Catalog of official NVIDIA guides.
-- `/cuopt`: GPU-accelerated routing and numerical optimization (LP, MILP).
-- `/cudf`: GPU DataFrames and pandas acceleration.
-- `/cudaq`: Quantum-classical hybrid programming.
-
-### 2. Model Context Protocol (MCP) Bridge
-Connect SQLite databases, GitHub integrations, and custom MCP tools via `.machcode/mcp.json`:
-```bash
-mach> /mcp list
-mach> /mcp reload
-```
-
----
-
-## 📖 Command Reference (29 Slash Commands)
-
-| Command | Usage | Category | Description |
-| :--- | :--- | :--- | :--- |
-| `/ask` | `/ask <question>` | Execution | Conversational Q&A without modifying files or running commands. |
-| `/plan` | `/plan <prompt>` | Execution | Switch to Plan Mode or generate an architectural blueprint. |
-| `/mode` | `/mode [plan\|build]` | Execution | Toggle between Plan (read-only) and Build (agent) modes. |
-| `/heavy` | `/heavy <prompt>` | Execution | Bypass race and route directly to Heavyweight reasoning model. |
-| `/fast` | `/fast <prompt>` | Execution | Bypass race and route directly to Lightweight fast model. |
-| `/review` | `/review <file>` | Execution | Run an in-depth security, bug, and edge-case code review. |
-| `/agent` | `/agent [name\|reset]` | Subagents | View, switch, or pin specialized NVIDIA NIM subagents. |
-| `/model` | `/model [id\|reset]` | System | Pin queries to a specific model or return to the racing pool. |
-| `/race` | `/race` | System | Run a live parallel latency, TTFT, and TPS benchmark. |
-| `/config` | `/config [refresh\|key]`| System | Update API key or refresh NIM catalog pools. |
-| `/approve` | `/approve [ask\|auto]` | Safety | Toggle interactive diff approval before writes. |
-| `/undo` | `/undo [file\|all]` | Safety | Rollback file modifications made by the AI. |
-| `/snapshots`| `/snapshots` | Safety | List chronological file mutation snapshots. |
-| `/search` | `/search <query>` | Context | High-speed multi-file regex search across the workspace. |
-| `/add` | `/add <path>` | Context | Add a specific file or folder to the active session context. |
-| `/drop` | `/drop <path>` | Context | Remove a file or folder from session context. |
-| `/save` | `/save [name]` | Session | Save current session snapshot to disk. |
-| `/sessions` | `/sessions` | Session | List recorded session checkpoints for this workspace. |
-| `/resume` | `/resume [id\|latest]` | Session | Restore a past session and resume turns. |
-| `/theme` | `/theme [name]` | UI | Switch terminal theme (`tokyo-night`, `matrix`, `dracula`...). |
-| `/status` | `/status` | UI | Display live session diagnostics card and status bar. |
-| `/tokens` | `/tokens` | Diagnostics | Display session prompt and output token usage. |
-| `/diff` | `/diff` | Git | View colorized terminal diff of uncommitted git changes. |
-| `/commit` | `/commit` | Git | Generate conventional commit message and commit. |
-| `/branch` | `/branch [name]` | Git | Show current git branch or switch branches. |
-| `/run` | `/run <cmd>` | System | Execute a shell command directly in the workspace. |
-| `/clear` | `/clear` | UI | Clear the terminal screen. |
-| `/help` | `/help` | Help | Display cheat sheet of all available commands. |
-| `/exit` | `/exit` | System | Gracefully exit the MachCode CLI. |
-
----
-
-## ❓ Troubleshooting & FAQ
-
-### 1. Why was `poolside/laguna-xs` winning every race?
-`laguna-xs` is a tiny micro-model optimized for sub-100ms TTFT. Because frontier models like `Kimi K3.1` and `DeepSeek R1` perform chain-of-thought reasoning before emitting their first content token, micro-models were winning solely on latency. MachCode balances this by:
-- Moving micro-models to the `WeakPool`.
-- Enforcing a 1.6s fair handicap delay when competing against frontier reasoning models.
-
-### 2. How do I use Moonshot Kimi K3.1 directly?
-You can dispatch to it instantly via:
-- One-off query: `mach> /heavy [your query]`
-- Pinned session: `mach> /model moonshotai/kimi-k3.1`
-
-### 3. How do I update my NVIDIA API Key?
-Inside the MachCode terminal:
-```bash
-mach> /config key nvapi-your-new-key-here
-```
+### 6. Can I use MachCode just to explore or ask questions?
+Yes. Press `Tab` or type `/mode plan` to enter **Plan Mode**. In this mode, MachCode operates in read-only mode — it can read files and explain code, but will never make changes or run terminal commands.
 
 ---
 
 ## 📄 License
-Distributed under the **[MIT License](LICENSE)**. See `LICENSE` for details.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+
+MachCode is free and open-source software distributed under the **[MIT License](LICENSE)**.
+Contributions, bug reports, and suggestions are welcome! Check out [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
