@@ -10,13 +10,12 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/machcode"><img src="https://img.shields.io/npm/v/machcode.svg?style=flat-square&color=cb3837&logo=npm" alt="npm version" /></a>
-  <a href="https://github.com/gokaykrbs/MachCode/releases"><img src="https://img.shields.io/badge/version-v0.1.0-blue.svg?style=flat-square" alt="version" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/actions/workflows/ci.yml"><img src="https://github.com/gokaykrbs/MachCode/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/actions/workflows/security.yml"><img src="https://github.com/gokaykrbs/MachCode/actions/workflows/security.yml/badge.svg" alt="Security Scan" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
-  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-110%2F110%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
-  <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-57%2B%20Models-76B900.svg?style=flat-square&logo=nvidia" alt="NVIDIA NIM" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.6-blue.svg?style=flat-square&logo=typescript" alt="TypeScript" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/CLI-Global%20Binary-cyan.svg?style=flat-square" alt="CLI" /></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/node-%3E%3D22.0.0-339933.svg?style=flat-square&logo=node.js&logoColor=white" alt="Node.js >=22" /></a>
+  <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-57%2B%20Models-76B900.svg?style=flat-square&logo=nvidia&logoColor=white" alt="NVIDIA NIM" /></a>
+  <a href="tsconfig.json"><img src="https://img.shields.io/badge/TypeScript-5.6-3178C6.svg?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
 </p>
 
 ---
@@ -48,17 +47,19 @@ Instead of relying on a single AI model that might be slow or temporarily down, 
 ## 🚀 Quick Start in 60 Seconds
 
 ### 1. Installation
-Install MachCode globally using `npm` (or `pnpm`):
+Requires **Node.js `>=22.0.0`** and **pnpm `12.x`**.
+
+Clone and link globally from source:
 
 ```bash
-# Global installation via npm:
-npm install -g machcode
-
-# Or run instantly without installation:
-npx machcode
+git clone https://github.com/gokaykrbs/MachCode.git
+cd MachCode
+pnpm install
+pnpm run build
+npm link
 ```
 
-*(Or clone and build from source: `git clone https://github.com/gokaykrbs/MachCode.git && cd MachCode && pnpm install && pnpm run build && npm link`)*
+*(Once published to the npm registry via GitHub Releases, you can also install directly with `npm install -g machcode` or run via `npx machcode`.)*
 
 ### 2. Launch
 Run `mach` in any project folder:
@@ -275,10 +276,14 @@ Yes. Press `Tab` or type `/mode plan` to enter **Plan Mode**. In this mode, Mach
 
 ---
 
-## 📄 License
+## 🤝 Contributing & License
 
 MachCode is free and open-source software distributed under the **[MIT License](LICENSE)**.
-Contributions, bug reports, and suggestions are welcome! Check out [CONTRIBUTING.md](CONTRIBUTING.md) to get involved.
+Contributions, bug reports, and ideas are welcome!
+
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and pull request guidelines.
+- Review our [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and [SECURITY.md](SECURITY.md) policies.
+- Track releases and updates in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

@@ -10,13 +10,12 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/machcode"><img src="https://img.shields.io/npm/v/machcode.svg?style=flat-square&color=cb3837&logo=npm" alt="npm version" /></a>
-  <a href="https://github.com/gokaykrbs/MachCode/releases"><img src="https://img.shields.io/badge/version-v0.1.0-blue.svg?style=flat-square" alt="version" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/actions/workflows/ci.yml"><img src="https://github.com/gokaykrbs/MachCode/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/gokaykrbs/MachCode/actions/workflows/security.yml"><img src="https://github.com/gokaykrbs/MachCode/actions/workflows/security.yml/badge.svg" alt="Security Scan" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
-  <a href="https://github.com/gokaykrbs/MachCode/actions"><img src="https://img.shields.io/badge/tests-110%2F110%20passing-brightgreen.svg?style=flat-square" alt="Tests Passing" /></a>
-  <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-57%2B%20Models-76B900.svg?style=flat-square&logo=nvidia" alt="NVIDIA NIM" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/TypeScript-5.6-blue.svg?style=flat-square&logo=typescript" alt="TypeScript" /></a>
-  <a href="#"><img src="https://img.shields.io/badge/CLI-Global%20Binary-cyan.svg?style=flat-square" alt="CLI" /></a>
+  <a href="package.json"><img src="https://img.shields.io/badge/node-%3E%3D22.0.0-339933.svg?style=flat-square&logo=node.js&logoColor=white" alt="Node.js >=22" /></a>
+  <a href="https://build.nvidia.com"><img src="https://img.shields.io/badge/NVIDIA%20NIM-57%2B%20Models-76B900.svg?style=flat-square&logo=nvidia&logoColor=white" alt="NVIDIA NIM" /></a>
+  <a href="tsconfig.json"><img src="https://img.shields.io/badge/TypeScript-5.6-3178C6.svg?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
 </p>
 
 ---
@@ -48,17 +47,19 @@ Geleneksel araçlar gibi tek bir yapay zeka modeline takılıp kalmak yerine Mac
 ## 🚀 60 Saniyede Hızlı Başlangıç
 
 ### 1. Kurulum
-MachCode'u terminalinizden tek komutla kurun:
+**Node.js `>=22.0.0`** ve **pnpm `12.x`** gerektirir.
+
+Kaynak koddan klonlayıp global olarak bağlayın:
 
 ```bash
-# npm ile global kurulum:
-npm install -g machcode
-
-# veya kurmadan doğrudan çalıştırmak için:
-npx machcode
+git clone https://github.com/gokaykrbs/MachCode.git
+cd MachCode
+pnpm install
+pnpm run build
+npm link
 ```
 
-*(Veya kaynak koddan kurmak isterseniz: `git clone https://github.com/gokaykrbs/MachCode.git && cd MachCode && pnpm install && pnpm run build && npm link`)*
+*(İlk npm sürümü yayınlandıktan sonra doğrudan `npm install -g machcode` ile kurabilir veya `npx machcode` ile çalıştırabilirsiniz.)*
 
 ### 2. Çalıştırma
 Herhangi bir proje klasörünüzde terminale `mach` yazın:
@@ -280,10 +281,14 @@ Evet. `Tab` tuşuna basarak veya `/mode plan` yazarak **Plan Modu**'na geçebili
 
 ---
 
-## 📄 Lisans
+## 🤝 Katkıda Bulunma & Lisans
 
 MachCode, **[MIT Lisansı](LICENSE)** altında sunulan ücretsiz ve açık kaynaklı bir yazılımdır.
-Katkıda bulunmak ve topluluk kuralları için [CONTRIBUTING.md](CONTRIBUTING.md) dosyasını inceleyebilirsiniz.
+Katkılarınız, hata bildirimleriniz ve önerileriniz her zaman değerlidir!
+
+- Kurulum ve Pull Request rehberi için [CONTRIBUTING.md](CONTRIBUTING.md) dosyasını inceleyin.
+- Topluluk ve güvenlik politikaları için [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) ve [SECURITY.md](SECURITY.md) belgelerine göz atın.
+- Sürüm geçmişini [CHANGELOG.md](CHANGELOG.md) üzerinden takip edebilirsiniz.
 
 ---
 

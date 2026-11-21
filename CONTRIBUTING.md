@@ -24,7 +24,7 @@ Before contributing, please keep in mind MachCode's core architectural tenets:
 ### Prerequisites
 
 - **Node.js**: v22.0.0 or higher (v22 LTS / v24+ recommended)
-- **pnpm**: v9.0.0 or higher
+- **pnpm**: v12.x (pinned via `packageManager` in `package.json`; Corepack supported via `corepack enable`)
 - **NVIDIA Build API Key**: Get a free API key from [NVIDIA Build](https://build.nvidia.com) (`nvapi-...`).
 
 ### Getting Started
@@ -43,9 +43,10 @@ pnpm run build
 # 4. Run tests
 pnpm test
 
-# 5. Check linting and formatting
+# 5. Check linting, formatting, and types
 pnpm run lint
 pnpm run format:check
+pnpm run typecheck
 ```
 
 ### CI / CD Workflows
@@ -85,6 +86,7 @@ Automated GitHub Actions workflows are configured in `.github/workflows/`:
    ```bash
    pnpm run format:check
    pnpm run lint
+   pnpm run typecheck
    pnpm run build
    pnpm test
    ```

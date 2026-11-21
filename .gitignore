@@ -1,6 +1,12 @@
 node_modules/
 dist/
+coverage/
 .env
+.env.*
+!.env.example
 *.log
+*.tgz
 .pnpm-store/
 .machcode/
+.DS_Store
+Thumbs.db

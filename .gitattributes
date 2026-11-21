@@ -1,0 +1,16 @@
+# Enforce consistent LF line endings across macOS, Linux, and Windows checkouts
+* text=auto eol=lf
+
+# Windows batch scripts require CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

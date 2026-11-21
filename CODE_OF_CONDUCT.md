@@ -51,7 +51,8 @@ an individual is officially representing the community in public spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders. All complaints will be reviewed and
+reported to the project maintainers via [GitHub Security Advisories](https://github.com/gokaykrbs/MachCode/security/advisories/new)
+or by contacting [@gokaykrbs](https://github.com/gokaykrbs) directly. All complaints will be reviewed and
 investigated promptly and fairly.
 
 ## Attribution
