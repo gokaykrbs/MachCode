@@ -13,10 +13,10 @@ describe('Phase 5: Packaging, Binary Entrypoints & Cross-Project Distribution', 
 
     const pkg = JSON.parse(await fs.readFile(pkgPath, 'utf-8'));
 
-    // 1. Bin fields
+    // 1. Bin fields (normalized npm standard format)
     assert.ok(pkg.bin, 'package.json must declare bin entries');
-    assert.equal(pkg.bin.mach, './dist/bin/machcode.js');
-    assert.equal(pkg.bin.machcode, './dist/bin/machcode.js');
+    assert.equal(pkg.bin.mach, 'dist/bin/machcode.js');
+    assert.equal(pkg.bin.machcode, 'dist/bin/machcode.js');
 
     // 2. Main and types
     assert.equal(pkg.main, './dist/src/index.js');

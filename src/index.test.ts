@@ -1,9 +1,30 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { runMachCode, read_file, write_file } from './index.js';
+
+let prevMachCodeHome: string | undefined;
+let isolatedHomeDir: string | undefined;
+
+beforeEach(async () => {
+  prevMachCodeHome = process.env.MACHCODE_HOME;
+  isolatedHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'machcode-home-'));
+  process.env.MACHCODE_HOME = isolatedHomeDir;
+});
+
+afterEach(async () => {
+  if (prevMachCodeHome === undefined) {
+    delete process.env.MACHCODE_HOME;
+  } else {
+    process.env.MACHCODE_HOME = prevMachCodeHome;
+  }
+  if (isolatedHomeDir) {
+    await fs.rm(isolatedHomeDir, { recursive: true, force: true });
+    isolatedHomeDir = undefined;
+  }
+});
 
 describe('End-to-End CLI Execution Flow (runMachCode)', () => {
   it('discovers workspace context via read_file, handles QUESTION: re-run loop, and writes updated file', async () => {

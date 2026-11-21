@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
+import { getConfigDir } from '../config/index.js';
 import type { OpenAIToolDefinition } from './nvidiaSkills.js';
 import type { ToolContext, ToolOutcome } from './agentTools.js';
 
@@ -39,7 +39,7 @@ export class McpBridge {
     if (workspaceDir) {
       candidates.push(path.join(workspaceDir, '.machcode', 'mcp.json'));
     }
-    candidates.push(path.join(os.homedir(), '.machcode', 'mcp.json'));
+    candidates.push(path.join(getConfigDir(), 'mcp.json'));
 
     for (const filePath of candidates) {
       try {

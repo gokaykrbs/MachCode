@@ -1,5 +1,8 @@
-import test, { describe } from 'node:test';
+import test, { describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import type readline from 'node:readline/promises';
 import { listThemes, setActiveTheme, getActiveTheme } from '../ui/theme.js';
 import { getGitBranch, formatTokenCount, renderStatusBar } from '../ui/statusBar.js';
@@ -8,6 +11,26 @@ import { createDefaultCommandRegistry, type CommandContext } from '../commands/i
 import { buildAutocompleteItems, filterAutocompleteItems } from '../ui/autocomplete.js';
 
 describe('Phase 3: Terminal Experience, Status Bar, @ Mentions & Themes', () => {
+  let prevMachCodeHome: string | undefined;
+  let isolatedHomeDir: string | undefined;
+
+  beforeEach(async () => {
+    prevMachCodeHome = process.env.MACHCODE_HOME;
+    isolatedHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'machcode-phase3-home-'));
+    process.env.MACHCODE_HOME = isolatedHomeDir;
+  });
+
+  afterEach(async () => {
+    if (prevMachCodeHome === undefined) {
+      delete process.env.MACHCODE_HOME;
+    } else {
+      process.env.MACHCODE_HOME = prevMachCodeHome;
+    }
+    if (isolatedHomeDir) {
+      await fs.rm(isolatedHomeDir, { recursive: true, force: true });
+      isolatedHomeDir = undefined;
+    }
+  });
   test('Theme System: lists themes and updates active theme palettes', () => {
     const themes = listThemes();
     assert.ok(themes.length >= 7, 'Should register at least 7 high-fidelity themes');

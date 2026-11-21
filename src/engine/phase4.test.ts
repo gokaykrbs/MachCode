@@ -1,5 +1,8 @@
-import test, { describe } from 'node:test';
+import test, { describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {
   saveSession,
   loadSession,
@@ -18,6 +21,26 @@ import type { SessionMessage } from '../index.js';
 
 describe('Phase 4: Resilience, Session Management & Context Summarization', () => {
   const testSessionId = `test_sess_${Date.now()}`;
+  let prevMachCodeHome: string | undefined;
+  let isolatedHomeDir: string | undefined;
+
+  beforeEach(async () => {
+    prevMachCodeHome = process.env.MACHCODE_HOME;
+    isolatedHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'machcode-phase4-home-'));
+    process.env.MACHCODE_HOME = isolatedHomeDir;
+  });
+
+  afterEach(async () => {
+    if (prevMachCodeHome === undefined) {
+      delete process.env.MACHCODE_HOME;
+    } else {
+      process.env.MACHCODE_HOME = prevMachCodeHome;
+    }
+    if (isolatedHomeDir) {
+      await fs.rm(isolatedHomeDir, { recursive: true, force: true });
+      isolatedHomeDir = undefined;
+    }
+  });
 
   test('Session Manager: saves, lists, loads, and deletes session files', async () => {
     const dummySession: SessionData = {

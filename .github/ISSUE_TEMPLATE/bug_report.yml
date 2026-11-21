@@ -12,7 +12,7 @@ body:
     attributes:
       label: MachCode Version
       description: What version of MachCode are you running? (Run `machcode --version`)
-      placeholder: 1.0.0
+      placeholder: 0.1.0
     validations:
       required: true
   - type: dropdown
@@ -33,7 +33,7 @@ body:
     attributes:
       label: Node.js Version
       description: Run `node -v`
-      placeholder: v20.11.0
+      placeholder: v22.14.0
     validations:
       required: true
   - type: textarea

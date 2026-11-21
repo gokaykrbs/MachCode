@@ -23,7 +23,7 @@ Before contributing, please keep in mind MachCode's core architectural tenets:
 
 ### Prerequisites
 
-- **Node.js**: v18.0.0 or higher (v20+ recommended)
+- **Node.js**: v22.0.0 or higher (v22 LTS / v24+ recommended)
 - **pnpm**: v9.0.0 or higher
 - **NVIDIA Build API Key**: Get a free API key from [NVIDIA Build](https://build.nvidia.com) (`nvapi-...`).
 
@@ -50,11 +50,10 @@ pnpm run format:check
 
 ### CI / CD Workflows
 
-Ready-to-use GitHub Actions workflows for multi-OS testing (Ubuntu, Windows, macOS across Node 18, 20, 22), automated NPM releases, and secret vulnerability scanning are maintained in `.ci-workflows/`. To enable them on your repository fork or GitHub web UI:
-```bash
-mkdir -p .github/workflows
-cp .ci-workflows/* .github/workflows/
-```
+Automated GitHub Actions workflows are configured in `.github/workflows/`:
+- **`ci.yml`**: Multi-OS quality and test matrix (Ubuntu, Windows, macOS across Node 22 and 24).
+- **`security.yml`**: Weekly and per-PR dependency audit and secret hygiene checks.
+- **`release.yml`**: Automated NPM publish and GitHub Release creation on `v*.*.*` tags.
 
 ---
 

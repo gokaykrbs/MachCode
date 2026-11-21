@@ -33,9 +33,14 @@ export const DEFAULT_NVIDIA_MODELS_ENDPOINT = 'https://integrate.api.nvidia.com/
 export const DEFAULT_API_TIMEOUT_MS = 10000;
 
 /**
- * Returns the absolute path to the ~/.machcode directory.
+ * Returns the absolute path to the MachCode configuration directory.
+ * Uses `MACHCODE_HOME` when set, otherwise defaults to `~/.machcode`.
  */
 export function getConfigDir(): string {
+  const override = process.env.MACHCODE_HOME?.trim();
+  if (override && override.length > 0) {
+    return path.resolve(override);
+  }
   return path.join(os.homedir(), CONFIG_DIR_NAME);
 }
 

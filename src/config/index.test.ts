@@ -1,9 +1,12 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {
   fetchNvidiaModels,
   autoAssignAndSaveModels,
-  saveConfig,
+  getConfigDir,
   loadConfig,
   ensureConfig,
 } from './index.js';
@@ -14,6 +17,27 @@ import {
   isHeavyTask,
   isEliteHeavyModel,
 } from '../engine/autoRouter.js';
+
+let prevMachCodeHome: string | undefined;
+let isolatedHomeDir: string | undefined;
+
+beforeEach(async () => {
+  prevMachCodeHome = process.env.MACHCODE_HOME;
+  isolatedHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'machcode-cfg-home-'));
+  process.env.MACHCODE_HOME = isolatedHomeDir;
+});
+
+afterEach(async () => {
+  if (prevMachCodeHome === undefined) {
+    delete process.env.MACHCODE_HOME;
+  } else {
+    process.env.MACHCODE_HOME = prevMachCodeHome;
+  }
+  if (isolatedHomeDir) {
+    await fs.rm(isolatedHomeDir, { recursive: true, force: true });
+    isolatedHomeDir = undefined;
+  }
+});
 
 describe('AutoRouter & Autonomous Model Routing', () => {
   it('isUsableGenerativeModel filters out embedding, safety, guard, and clip models', () => {
@@ -64,43 +88,34 @@ describe('AutoRouter & Autonomous Model Routing', () => {
   });
 
   it('autoAssignAndSaveModels fetches, routes, and saves models silently', async () => {
-    const existingConfig = await loadConfig();
-    try {
-      const mockFetch: typeof fetch = async (input, _init) => {
-        const url = String(input);
-        assert.ok(url.includes('/models'));
+    const mockFetch: typeof fetch = async (input, _init) => {
+      const url = String(input);
+      assert.ok(url.includes('/models'));
 
-        const mockResponse = {
-          data: [
-            { id: 'deepseek-ai/deepseek-coder-6.7b-instruct' },
-            { id: 'nvidia/llama-3.1-nemotron-70b-instruct' },
-          ],
-        };
-
-        return new Response(JSON.stringify(mockResponse), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+      const mockResponse = {
+        data: [
+          { id: 'deepseek-ai/deepseek-coder-6.7b-instruct' },
+          { id: 'nvidia/llama-3.1-nemotron-70b-instruct' },
+        ],
       };
 
-      const result = await autoAssignAndSaveModels(
-        'nvapi-test',
-        'https://mock.nvidia.com/v1',
-        mockFetch,
-      );
-      assert.equal(result.lightModel, 'deepseek-ai/deepseek-coder-6.7b-instruct');
-      assert.equal(result.heavyModel, 'nvidia/llama-3.1-nemotron-70b-instruct');
-    } finally {
-      if (existingConfig) {
-        await saveConfig(
-          existingConfig.nvidiaApiKey,
-          existingConfig.lightModel,
-          existingConfig.heavyModel,
-          existingConfig.strongPool,
-          existingConfig.weakPool,
-        );
-      }
-    }
+      return new Response(JSON.stringify(mockResponse), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    const result = await autoAssignAndSaveModels(
+      'nvapi-test',
+      'https://mock.nvidia.com/v1',
+      mockFetch,
+    );
+    assert.equal(result.lightModel, 'deepseek-ai/deepseek-coder-6.7b-instruct');
+    assert.equal(result.heavyModel, 'nvidia/llama-3.1-nemotron-70b-instruct');
+    assert.equal(getConfigDir(), path.resolve(isolatedHomeDir!));
+
+    const persisted = await loadConfig();
+    assert.equal(persisted?.nvidiaApiKey, 'nvapi-test');
   });
 });
 

@@ -61,6 +61,8 @@ describe('Tools & NVIDIA Official Skills Integration', () => {
 
   it('automatically syncs and loads NVIDIA/skills SKILL.md definitions', async () => {
     const tmpCache = await fs.mkdtemp(path.join(os.tmpdir(), 'machcode-nvskills-'));
+    const prevHome = process.env.MACHCODE_HOME;
+    process.env.MACHCODE_HOME = tmpCache;
 
     try {
       const mockReadme = [
@@ -119,6 +121,11 @@ describe('Tools & NVIDIA Official Skills Integration', () => {
       });
       assert.ok(toolOutput.includes('accelerated-computing-cudf'));
     } finally {
+      if (prevHome === undefined) {
+        delete process.env.MACHCODE_HOME;
+      } else {
+        process.env.MACHCODE_HOME = prevHome;
+      }
       await fs.rm(tmpCache, { recursive: true, force: true });
     }
   });

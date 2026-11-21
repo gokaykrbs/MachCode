@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { getConfigDir } from '../config/index.js';
 import type { SessionMessage } from '../index.js';
 import type { FileSnapshot, TokenStats } from '../commands/types.js';
 
@@ -33,7 +33,7 @@ export interface SessionSummary {
 const SESSIONS_DIR_NAME = 'sessions';
 
 export function getSessionsDir(): string {
-  const homeSessions = path.join(os.homedir(), '.machcode', SESSIONS_DIR_NAME);
+  const homeSessions = path.join(getConfigDir(), SESSIONS_DIR_NAME);
   if (!fsSync.existsSync(homeSessions)) {
     fsSync.mkdirSync(homeSessions, { recursive: true });
   }

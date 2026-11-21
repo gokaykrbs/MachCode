@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import {
@@ -8,6 +9,21 @@ import {
   startRepl,
 } from '../src/index.js';
 
+function resolveCliVersion(): string {
+  for (const relPath of ['../../package.json', '../package.json']) {
+    try {
+      const pkgUrl = new URL(relPath, import.meta.url);
+      const parsed = JSON.parse(fs.readFileSync(pkgUrl, 'utf-8')) as { version?: string };
+      if (parsed.version) {
+        return parsed.version;
+      }
+    } catch {
+      // Try next relative path
+    }
+  }
+  return '0.1.0';
+}
+
 const program = new Command();
 
 program
@@ -15,7 +31,7 @@ program
   .description(
     'MachCode: Zero-hallucination, high-speed AI code editor CLI powered by Streaming Handoff Racing on NVIDIA NIM.',
   )
-  .version('0.1.0')
+  .version(resolveCliVersion())
   .option('-f, --file <path>', 'Target file path to read and overwrite')
   .option('-l, --light-model <model>', 'Lightweight fast NIM model')
   .option('-m, --heavy-model <model>', 'Heavyweight deep coding NIM model')
