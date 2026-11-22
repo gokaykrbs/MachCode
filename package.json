@@ -33,7 +33,6 @@
     "developer-tools",
     "agent"
   ],
-  "author": "Gökay Karabaş",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
