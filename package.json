@@ -50,7 +50,7 @@
     "@inquirer/prompts": "^8.7.3",
     "boxen": "^9.0.0",
     "chalk": "^5.3.0",
-    "commander": "^12.1.0",
+    "commander": "^15.1.0",
     "figlet": "^1.12.0",
     "gradient-string": "^3.0.0",
     "ora": "^8.1.0"
