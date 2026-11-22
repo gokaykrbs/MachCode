@@ -204,8 +204,8 @@ importers:
         specifier: ^9.12.0
         version: 9.39.5
       '@types/figlet':
-        specifier: ^1.7.0
-        version: 1.7.0
+        specifier: ^1.12.0
+        version: 1.12.0
       '@types/gradient-string':
         specifier: ^1.1.6
         version: 1.1.6
@@ -587,8 +587,9 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
-  '@types/figlet@1.7.0':
-    resolution: {integrity: sha512-KwrT7p/8Eo3Op/HBSIwGXOsTZKYiM9NpWRBJ5sVjWP/SmlS+oxxRvJht/FNAtliJvja44N3ul1yATgohnVBV0Q==}
+  '@types/figlet@1.12.0':
+    resolution: {integrity: sha512-tPv140QqwGL4Jot2fzTxC6Oy8BVdHEZe4SJDlRuRkywfksv8kMCbTYvtuN9mJCm41HlgRhwb5rRaiH6FE5Hm9g==}
+    deprecated: This is a stub types definition. figlet provides its own type definitions, so you do not need this installed.
 
   '@types/gradient-string@1.1.6':
     resolution: {integrity: sha512-LkaYxluY4G5wR1M4AKQUal2q61Di1yVVCw42ImFTuaIoQVgmV0WP1xUaLB8zwb47mp82vWTpePI9JmrjEnJ7nQ==}
@@ -1454,7 +1455,9 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
-  '@types/figlet@1.7.0': {}
+  '@types/figlet@1.12.0':
+    dependencies:
+      figlet: 1.12.0
 
   '@types/gradient-string@1.1.6':
     dependencies:
